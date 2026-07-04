@@ -1,0 +1,82 @@
+version: "3.8"
+
+services:
+  fastapi:
+    build: ./law11_backend
+    container_name: law11_backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./law11_backend/app:/app/app
+      - ./law11_backend/core:/app/core
+      - ./law11_backend/.env:/app/.env
+      - ./.cache:/app/.cache
+    env_file:
+      - ./law11_backend/.env
+    environment:
+      PYTHONPATH: /app
+      DB_HOST: postgres
+      QDRANT_HOST: qdrant
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - law11_network
+
+  frontend:
+    container_name: law11_frontend
+    build:
+      context: ./law11_frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
+    depends_on:
+      - fastapi
+    ports:
+      - "${FRONTEND_HTTP_PORT:-3000}:80"
+    restart: unless-stopped
+    networks:
+      - law11_network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - law11_network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    env_file:
+      - ./law11_backend/.env
+    environment:
+      POSTGRES_USER: ${DB_USER:-daniel}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME:-law11}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+      - ./law11_backend/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    restart: unless-stopped
+    networks:
+      - law11_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-daniel} -d ${DB_NAME:-law11}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  law11_network:
+    driver: bridge
