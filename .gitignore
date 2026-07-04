@@ -31,6 +31,7 @@ venv/
 law11_frontend/node_modules/
 law11_frontend/.vite/
 law11_frontend/dist/
+law11_frontend/src_backup_*/
 *.map
 
 # =========================================
