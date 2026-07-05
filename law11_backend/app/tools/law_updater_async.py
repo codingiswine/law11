@@ -144,10 +144,11 @@ def deep_extract_text(value) -> List[str]:
             out.extend(deep_extract_text(v))
     elif isinstance(value, dict):
         for k, v in value.items():
-            if k in ["조문내용", "조문단위", "항내용", "호내용", "전문", "#text", "content"]:
-                out.extend(deep_extract_text(v))
-            else:
-                out.extend(deep_extract_text(v))
+            # ⚠️ "항번호"/"호번호"/"목번호" 등은 이미 해당 "*내용" 필드 텍스트 안에
+            # 번호가 포함되어 있으므로(예: "1 제4조...") 별도 추출 시 번호가 중복된다.
+            if k.endswith("번호") or k.startswith("@"):
+                continue
+            out.extend(deep_extract_text(v))
     elif isinstance(value, str):
         t = value.strip()
         if t:

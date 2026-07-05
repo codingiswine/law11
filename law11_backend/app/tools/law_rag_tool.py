@@ -225,26 +225,28 @@ async def run(plan):
             # 0.45: 법령명 미인식 상태의 전체 검색이므로 넓게 허용.
             # 사용자가 법령 용어를 쓰지 않아도 관련 조문을 건질 수 있어야 한다.
             if results and results[0].score >= 0.45:
-                # 중복 조문 제거 후 컨텍스트 조합
-                contexts = []
-                sources = []
-                citations = []
+                # 중복 조문 제거 (Cross-Encoder 순서 기준으로 우선순위 결정)
+                deduped = []
                 seen_articles = set()
-                for rank, r in enumerate(results, start=1):
+                for r in results:
                     text_val = r.payload.get("text", "")
                     r_law = r.payload.get("law_name", "")
                     r_article = r.payload.get("article_number_norm", "")
                     dedup_key = f"{r_law}:{r_article}"
                     if text_val and dedup_key not in seen_articles:
                         seen_articles.add(dedup_key)
-                        contexts.append(f"[{r_law} 제{r_article}조]\n{text_val}")
-                        sources.append(f"{r_law} 제{r_article}조")
-                        citations.append({
-                            "law_name": r_law,
-                            "article_number": r_article,
-                            "score": round(r.score, 4),
-                            "rank": rank,
-                        })
+                        deduped.append((r_law, r_article, text_val, r.score))
+
+                # ✅ 화면에 표시되는 %(Qdrant 코사인 유사도)와 배지 순서가 일치하도록
+                # 코사인 점수 내림차순으로 재정렬 (선택 자체는 위에서 Cross-Encoder로 이미 완료)
+                deduped.sort(key=lambda x: x[3], reverse=True)
+
+                contexts = [f"[{law} 제{art}조]\n{text}" for law, art, text, _ in deduped]
+                sources = [f"{law} 제{art}조" for law, art, _, _ in deduped]
+                citations = [
+                    {"law_name": law, "article_number": art, "score": round(score, 4), "rank": rank}
+                    for rank, (law, art, _, score) in enumerate(deduped, start=1)
+                ]
                 combined = "\n\n".join(contexts)
                 yield ToolChunk(type="status", payload=f"✅ [Qdrant] 관련 조문 {len(contexts)}개 발견")
                 yield ToolChunk(type="meta", payload={

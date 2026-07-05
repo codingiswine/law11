@@ -26,13 +26,37 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onLawClick,
 }) => {
   const [answer, setAnswer] = useState("");
+  const [displayedAnswer, setDisplayedAnswer] = useState("");
   const [statusMessages, setStatusMessages] = useState<string[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // ✅ 수신 속도와 무관하게 일정한 속도로 타이핑 효과 재생
+  useEffect(() => {
+    if (answer.length === 0) {
+      setDisplayedAnswer("");
+      return;
+    }
+    if (displayedAnswer.length >= answer.length) return;
+    const id = setInterval(() => {
+      setDisplayedAnswer((prev) => answer.slice(0, prev.length + 2));
+    }, 15);
+    return () => clearInterval(id);
+  }, [answer, displayedAnswer]);
+
   const streamStartRef = useRef(onStreamStart);
   const streamCompleteRef = useRef(onStreamComplete);
   const streamErrorRef = useRef(onStreamError);
+  const pendingCompleteRef = useRef<{ answer: string; messageId?: number; sources: LawSource[] } | null>(null);
+
+  // ✅ 타이핑 효과가 answer를 다 따라잡은 뒤에야 완료 콜백 실행 (중복 표시 방지)
+  useEffect(() => {
+    if (!pendingCompleteRef.current) return;
+    if (displayedAnswer.length < answer.length) return;
+    const { answer: finalAnswer, messageId, sources } = pendingCompleteRef.current;
+    pendingCompleteRef.current = null;
+    streamCompleteRef.current?.(finalAnswer, messageId, sources);
+  }, [displayedAnswer, answer]);
 
   useEffect(() => {
     streamStartRef.current = onStreamStart;
@@ -48,7 +72,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, answer, statusMessages]);
+  }, [messages, displayedAnswer, statusMessages]);
 
   useEffect(() => {
     if (!activeQuestion) {
@@ -174,7 +198,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       } finally {
         if (!isCancelled) {
           setIsStreaming(false);
-          streamCompleteRef.current?.(latestAnswer, latestMessageId, latestSources);
+          pendingCompleteRef.current = { answer: latestAnswer, messageId: latestMessageId, sources: latestSources };
         }
       }
     };
@@ -197,7 +221,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     }
   }, [isStreaming, activeQuestion]);
 
-  const shouldShowLiveAnswer = isStreaming || (!!answer && activeQuestion);
+  const shouldShowLiveAnswer = isStreaming || (!!answer && activeQuestion) || displayedAnswer.length < answer.length;
 
   return (
     <div className="space-y-4">
@@ -217,8 +241,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       {shouldShowLiveAnswer && (
         <div className="py-2 space-y-2">
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800">
-            {answer || (
+            {displayedAnswer || (
               <span className="text-gray-400 animate-pulse">답변을 생성 중입니다...</span>
+            )}
+            {displayedAnswer && displayedAnswer.length < answer.length && (
+              <span className="animate-pulse">▌</span>
             )}
           </div>
           <div className="space-y-0.5">
