@@ -12,7 +12,7 @@ PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → 
 Self-RAG 할루시네이션 검증, 멀티턴 세션, Citation 추적, SSE 기반 실시간 스트리밍을 지원합니다.
 
 <div align="center">
-  <img src="assets/llex_demo.gif" alt="Law11 Demo" width="800">
+  <img src="assets/law11_demo.gif" alt="Law11 Demo" width="800">
 </div>
 
 ---

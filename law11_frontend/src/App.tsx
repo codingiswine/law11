@@ -43,7 +43,11 @@ function App() {
   }, []);
 
   const handleLawClick = useCallback((ref: LawReference) => {
-    setSelectedLaw({ name: ref.lawName, article: ref.articleNumber });
+    setSelectedLaw(prev =>
+      prev && prev.name === ref.lawName && prev.article === ref.articleNumber
+        ? null
+        : { name: ref.lawName, article: ref.articleNumber }
+    );
   }, []);
 
   const handleFeedback = useCallback(async (messageId: number, value: 1 | -1) => {
@@ -80,8 +84,11 @@ function App() {
             <h1 style={{ fontFamily: "'Outfit', sans-serif", fontSize: "2.2rem", fontWeight: 700, color: "#111827", marginBottom: "0.3rem" }}>
               Law11
             </h1>
+            <p style={{ color: "#9ca3af", fontSize: "0.8rem", marginBottom: "0.4rem" }}>
+              대한민국 헌법 11조: 모든 국민은 법 앞에 평등하다
+            </p>
             <p style={{ color: "#6b7280", fontSize: "0.95rem", marginBottom: "2rem" }}>
-              산업안전보건 법령 전문 AI 어시스턴트
+              재난안전관리팀 전문 AI 어시스턴트
             </p>
             <div style={{ width: "100%", maxWidth: "640px" }}>
               <SearchBar onSearch={handleSearch} />
