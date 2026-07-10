@@ -25,38 +25,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onFeedback,
   onLawClick,
 }) => {
-  const [answer, setAnswer] = useState("");
   const [displayedAnswer, setDisplayedAnswer] = useState("");
   const [statusMessages, setStatusMessages] = useState<string[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // ✅ 수신 속도와 무관하게 일정한 속도로 타이핑 효과 재생
-  useEffect(() => {
-    if (answer.length === 0) {
-      setDisplayedAnswer("");
-      return;
-    }
-    if (displayedAnswer.length >= answer.length) return;
-    const id = setInterval(() => {
-      setDisplayedAnswer((prev) => answer.slice(0, prev.length + 2));
-    }, 15);
-    return () => clearInterval(id);
-  }, [answer, displayedAnswer]);
-
   const streamStartRef = useRef(onStreamStart);
   const streamCompleteRef = useRef(onStreamComplete);
   const streamErrorRef = useRef(onStreamError);
-  const pendingCompleteRef = useRef<{ answer: string; messageId?: number; sources: LawSource[] } | null>(null);
-
-  // ✅ 타이핑 효과가 answer를 다 따라잡은 뒤에야 완료 콜백 실행 (중복 표시 방지)
-  useEffect(() => {
-    if (!pendingCompleteRef.current) return;
-    if (displayedAnswer.length < answer.length) return;
-    const { answer: finalAnswer, messageId, sources } = pendingCompleteRef.current;
-    pendingCompleteRef.current = null;
-    streamCompleteRef.current?.(finalAnswer, messageId, sources);
-  }, [displayedAnswer, answer]);
 
   useEffect(() => {
     streamStartRef.current = onStreamStart;
@@ -88,6 +64,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     let latestMessageId: number | undefined = undefined;
     let latestSources: LawSource[] = [];
 
+    // ✅ 질문 하나당 리빌 interval을 단 하나만 생성 — 완료 콜백도 같은 클로저에서
+    // 발화하므로, 새 질문이 시작되면 cleanup에서 함께 취소되어 이전 질문의
+    // 완료가 새 질문에 잘못 발화되는 경합이 원천적으로 불가능하다.
+    let networkDone = false;
+    let completed = false;
+    let revealedLength = 0;
+    const revealTimer = setInterval(() => {
+      if (revealedLength < latestAnswer.length) {
+        revealedLength = Math.min(revealedLength + 2, latestAnswer.length);
+        setDisplayedAnswer(latestAnswer.slice(0, revealedLength));
+      } else if (networkDone && !completed) {
+        completed = true;
+        clearInterval(revealTimer);
+        streamCompleteRef.current?.(latestAnswer, latestMessageId, latestSources);
+      }
+    }, 15);
+
     const pushStatus = (message: unknown, isError = false) => {
       const text =
         typeof message === "string"
@@ -107,19 +100,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     const handleLine = (rawLine: string) => {
       const line = rawLine.trim();
       if (!line) return;
-    
+
       // ✅ "data:" 접두어 제거
       const cleanLine = line.startsWith("data:") ? line.replace(/^data:\s*/, "") : line;
-    
+
       try {
         const data = JSON.parse(cleanLine);
         const eventType = data.event || data.type;
-    
+
         switch (eventType) {
           case "text": {
             const payload = typeof data.payload === "string" ? data.payload : "";
             latestAnswer += payload;
-            setAnswer((prev) => prev + payload);
             break;
           }
           case "status":
@@ -147,11 +139,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         console.error("Stream parse error:", err, line);
       }
     };
-    
+
 
     const fetchStream = async () => {
       try {
-        setAnswer("");
+        setDisplayedAnswer("");
         setStatusMessages([]);
         setIsStreaming(true);
         streamStartRef.current?.();
@@ -198,7 +190,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       } finally {
         if (!isCancelled) {
           setIsStreaming(false);
-          pendingCompleteRef.current = { answer: latestAnswer, messageId: latestMessageId, sources: latestSources };
+          networkDone = true;
         }
       }
     };
@@ -208,6 +200,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     return () => {
       isCancelled = true;
       controller.abort();
+      clearInterval(revealTimer);
+      // ✅ 네트워크는 이미 끝났는데 타이핑 리빌이 안 끝난 채로 다음 질문이
+      // 시작되면, 인터벌이 죽어 완료 콜백이 영영 안 불려 답변이 유실된다.
+      // 리빌은 끊겨도 되지만 이미 받은 답변은 반드시 저장되어야 하므로 즉시 flush.
+      if (networkDone && !completed) {
+        completed = true;
+        streamCompleteRef.current?.(latestAnswer, latestMessageId, latestSources);
+      }
       if (reader) {
         reader.cancel().catch(() => undefined);
       }
@@ -216,12 +216,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   useEffect(() => {
     if (!isStreaming && !activeQuestion) {
-      setAnswer("");
+      setDisplayedAnswer("");
       setStatusMessages([]);
     }
   }, [isStreaming, activeQuestion]);
 
-  const shouldShowLiveAnswer = isStreaming || (!!answer && activeQuestion) || displayedAnswer.length < answer.length;
+  const shouldShowLiveAnswer = isStreaming || (!!activeQuestion && displayedAnswer.length > 0);
 
   return (
     <div className="space-y-4">
@@ -244,7 +244,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             {displayedAnswer || (
               <span className="text-gray-400 animate-pulse">답변을 생성 중입니다...</span>
             )}
-            {displayedAnswer && displayedAnswer.length < answer.length && (
+            {!!activeQuestion && displayedAnswer.length > 0 && (
               <span className="animate-pulse">▌</span>
             )}
           </div>

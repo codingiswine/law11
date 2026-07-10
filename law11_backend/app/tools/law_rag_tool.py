@@ -255,7 +255,7 @@ async def run(plan):
                     "selected_articles": sources,
                     "citations": citations,
                     "fallback_used": False,
-                    "confidence_score": results[0].score if results else None,
+                    "confidence_score": deduped[0][3] if deduped else None,
                     "tool": "law_rag_tool",
                 })
 
