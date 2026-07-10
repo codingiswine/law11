@@ -136,6 +136,13 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
+# "항번호"/"호번호"/"목번호"/"조문번호"는 이미 해당 "*내용" 필드 텍스트 안에
+# 번호가 포함되어 있으므로(예: "1 제4조...") 별도 추출 시 번호가 중복된다.
+# 항/호/목 같은 컨테이너 키는 재귀 대상이어야 하므로 화이트리스트가 아닌
+# 정확한 메타 키 이름 목록으로 걸러낸다 (패턴 매칭보다 오탐/누락이 적음).
+_NUMBER_ONLY_KEYS = {"항번호", "호번호", "목번호", "조문번호"}
+
+
 def deep_extract_text(value) -> List[str]:
     """DRF JSON에서 모든 텍스트 추출"""
     out = []
@@ -144,9 +151,7 @@ def deep_extract_text(value) -> List[str]:
             out.extend(deep_extract_text(v))
     elif isinstance(value, dict):
         for k, v in value.items():
-            # ⚠️ "항번호"/"호번호"/"목번호" 등은 이미 해당 "*내용" 필드 텍스트 안에
-            # 번호가 포함되어 있으므로(예: "1 제4조...") 별도 추출 시 번호가 중복된다.
-            if k.endswith("번호") or k.startswith("@"):
+            if k in _NUMBER_ONLY_KEYS or k.startswith("@"):
                 continue
             out.extend(deep_extract_text(v))
     elif isinstance(value, str):
