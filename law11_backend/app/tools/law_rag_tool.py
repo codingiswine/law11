@@ -24,7 +24,7 @@ def _extract_web_citations(answer: str) -> list:
         key = f"{law_name}:{article}"
         if key not in seen:
             seen.add(key)
-            citations.append({"law_name": law_name, "article_number": article, "score": 0.0, "rank": rank})
+            citations.append({"law_name": law_name, "article_number": article, "score": None, "rank": rank})
         if len(citations) >= 5:
             break
     return citations

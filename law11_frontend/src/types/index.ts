@@ -26,7 +26,7 @@ export interface AskResponse {
 export interface LawSource {
   law_name: string;
   article_number: string;
-  score: number;
+  score: number | null;
   rank: number;
 }
 
