@@ -106,7 +106,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, messageId, fee
           <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>참고 법령:</span>
           {sources.map((source, i) => {
             const label = `${source.law_name} 제${source.article_number}조`;
-            const scorePercent = Math.round(source.score * 100);
+            const scorePercent = source.score != null ? Math.round(source.score * 100) : null;
             return (
               <button
                 key={i}
@@ -125,15 +125,17 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, messageId, fee
                 }}
               >
                 {label}
-                <span style={{
-                  fontSize: "0.65rem",
-                  background: scorePercent >= 70 ? "#dcfce7" : "#fef9c3",
-                  color: scorePercent >= 70 ? "#15803d" : "#a16207",
-                  borderRadius: "4px",
-                  padding: "1px 4px",
-                }}>
-                  {scorePercent}%
-                </span>
+                {scorePercent != null && (
+                  <span style={{
+                    fontSize: "0.65rem",
+                    background: scorePercent >= 70 ? "#dcfce7" : "#fef9c3",
+                    color: scorePercent >= 70 ? "#15803d" : "#a16207",
+                    borderRadius: "4px",
+                    padding: "1px 4px",
+                  }}>
+                    {scorePercent}%
+                  </span>
+                )}
               </button>
             );
           })}
