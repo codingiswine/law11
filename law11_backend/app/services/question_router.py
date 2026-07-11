@@ -1,3 +1,4 @@
+import re
 import unicodedata
 from typing import Dict, Optional
 from openai import AsyncOpenAI
@@ -34,6 +35,12 @@ _BLOG_KEYWORDS = ["블로그", "포스팅", "후기", "리뷰", "경험담"]
 _DB_KEYWORDS = ["데이터에서", "기록에서", "db에서", "데이터 확인", "기록 확인"]
 _FOREIGN_KEYWORDS = ["osha", "미국", "일본", "중국", "유럽", "eu", "iso", "ilo", "해외", "외국", "국제", "글로벌", "미국법", "일본법"]
 _GENERAL_KEYWORDS = ["힘들", "피곤", "기분", "고마워", "감사", "사랑", "재밌", "화나", "짜증", "슬퍼", "걱정", "무서워", "불안", "외로워"]
+
+# ✅ law_rag_tool.py의 article_match와 동일한 패턴 — "제17조"/"17조" 모두 매치.
+# DB에 없는 법(예: 소방기본법)이어도 조문 번호가 있으면 law_rag_tool로 보내야
+# 자체 웹 폴백(조문 인용 + 출처 포맷)을 타지, websearch_tool(뉴스/블로그 요약)로
+# 새서 조문 인용 없는 답이 나오지 않는다.
+_ARTICLE_NUMBER_PATTERN = re.compile(r"(?:제)?\s*\d+\s*조")
 
 _raw_laws = [
     "산업안전보건법", "산업안전보건법 시행령", "산업안전보건법 시행규칙",
@@ -115,6 +122,10 @@ async def detect_tool(user_id: str, text: str, session_id: Optional[str] = None)
     if any(k in raw_q_lower for k in _FOREIGN_KEYWORDS):
         logger.info("🌐 [Router] 외국 법령/기관 → WEBSEARCH_TOOL (fast)")
         return _plan("websearch_tool")
+
+    if _ARTICLE_NUMBER_PATTERN.search(text):
+        logger.info("📜 [Router] 조문 번호 패턴 감지 → LAW_RAG_TOOL (fast)")
+        return _plan("law_rag_tool")
 
     if any(k in normalized_q for k in _LAW_KEYWORDS):
         logger.info("🏛️ [Router] 법령 키워드 → LAW_RAG_TOOL (fast)")
