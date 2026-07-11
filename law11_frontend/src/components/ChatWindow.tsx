@@ -4,6 +4,30 @@ import type { Message, LawReference, LawSource } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+// ✅ 웹 검색 폴백은 오래 걸리는데 마지막 상태 메시지가 그대로 멈춰 있어서
+// "멈췄나?" 하는 느낌을 줌 — 답변이 오기 전까지 재밌는 문구를 랜덤 순환 표시.
+const WEB_FALLBACK_TRIGGERS = ["Web 검색으로 보완", "Web fallback 실행"];
+const FUNNY_SEARCH_MESSAGES = [
+  "국가법령정보센터 서고 뒤엎는 중...",
+  "구글 본사 뒤지는 중...",
+  "판례 몰래 훔쳐보는 중...",
+  "변호사 없이 혼자 법전 넘기는 중...",
+  "인터넷 구석구석 탈탈 터는 중...",
+  "관련 조문 붙잡고 심문하는 중...",
+  "검색엔진들 닦달하는 중...",
+  "클로드 본사 뒤지는 중...",
+  "GPT 본사 뒤지는 중...",
+];
+
+function pickNextFunnyMessage(excludeIndex: number): number {
+  if (FUNNY_SEARCH_MESSAGES.length <= 1) return 0;
+  let next = Math.floor(Math.random() * FUNNY_SEARCH_MESSAGES.length);
+  while (next === excludeIndex) {
+    next = Math.floor(Math.random() * FUNNY_SEARCH_MESSAGES.length);
+  }
+  return next;
+}
+
 interface ChatWindowProps {
   messages: Message[];
   activeQuestion: string | null;
@@ -28,6 +52,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [displayedAnswer, setDisplayedAnswer] = useState("");
   const [statusMessages, setStatusMessages] = useState<string[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [funnyMessage, setFunnyMessage] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const streamStartRef = useRef(onStreamStart);
@@ -81,6 +106,27 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       }
     }, 15);
 
+    let funnyTimer: ReturnType<typeof setInterval> | null = null;
+    let funnyIndex = -1;
+
+    const stopFunnyRotation = () => {
+      if (funnyTimer) {
+        clearInterval(funnyTimer);
+        funnyTimer = null;
+      }
+      setFunnyMessage(null);
+    };
+
+    const startFunnyRotation = () => {
+      if (funnyTimer) return;
+      funnyIndex = pickNextFunnyMessage(funnyIndex);
+      setFunnyMessage(FUNNY_SEARCH_MESSAGES[funnyIndex]);
+      funnyTimer = setInterval(() => {
+        funnyIndex = pickNextFunnyMessage(funnyIndex);
+        setFunnyMessage(FUNNY_SEARCH_MESSAGES[funnyIndex]);
+      }, 2000);
+    };
+
     const pushStatus = (message: unknown, isError = false) => {
       const text =
         typeof message === "string"
@@ -95,6 +141,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         ...prev,
         isError ? `❌ ${text}` : text,
       ]);
+      if (!isError && WEB_FALLBACK_TRIGGERS.some((trigger) => text.includes(trigger))) {
+        startFunnyRotation();
+      }
     };
 
     const handleLine = (rawLine: string) => {
@@ -112,6 +161,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           case "text": {
             const payload = typeof data.payload === "string" ? data.payload : "";
             latestAnswer += payload;
+            stopFunnyRotation();
             break;
           }
           case "status":
@@ -145,6 +195,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       try {
         setDisplayedAnswer("");
         setStatusMessages([]);
+        setFunnyMessage(null);
         setIsStreaming(true);
         streamStartRef.current?.();
 
@@ -201,6 +252,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       isCancelled = true;
       controller.abort();
       clearInterval(revealTimer);
+      if (funnyTimer) clearInterval(funnyTimer);
       // ✅ 네트워크는 이미 끝났는데 타이핑 리빌이 안 끝난 채로 다음 질문이
       // 시작되면, 인터벌이 죽어 완료 콜백이 영영 안 불려 답변이 유실된다.
       // 리빌은 끊겨도 되지만 이미 받은 답변은 반드시 저장되어야 하므로 즉시 flush.
@@ -218,6 +270,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     if (!isStreaming && !activeQuestion) {
       setDisplayedAnswer("");
       setStatusMessages([]);
+      setFunnyMessage(null);
     }
   }, [isStreaming, activeQuestion]);
 
@@ -259,6 +312,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 {msg}
               </div>
             ))}
+            {funnyMessage && (
+              <div className="text-xs text-gray-400 italic">{funnyMessage}</div>
+            )}
           </div>
         </div>
       )}
