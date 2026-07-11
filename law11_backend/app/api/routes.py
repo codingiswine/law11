@@ -614,7 +614,7 @@ async def get_law_article(name: str, article: str):
     article_norm = normalize_article(article)
 
     sql = text("""
-        SELECT law_name, article_number, text, enforcement_date
+        SELECT law_name, text, enforcement_date
         FROM law_chunks
         WHERE law_name_norm = :law AND article_number_norm = :article
         LIMIT 1
@@ -629,7 +629,7 @@ async def get_law_article(name: str, article: str):
             "law_name": row.law_name,
             "articles": [{
                 "law_name": row.law_name,
-                "article_number": row.article_number,
+                "article_number": article_norm,
                 "law_name_norm": law_norm,
                 "article_number_norm": article_norm,
                 "text": row.text,

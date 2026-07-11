@@ -8,6 +8,15 @@ interface LawSidePanelProps {
   onClose: () => void;
 }
 
+// ✅ "1 제4조..." 처럼 항 번호가 점(.) 없이 본문에 바로 붙어 있으면
+// "1. 제4조..."로 보여 번호와 내용이 구분되도록 한다 (호 항목은 이미 "1. "로
+// 시작하므로 건드리지 않음).
+const formatArticleText = (text: string) =>
+  text
+    .split("\n")
+    .map((line) => line.replace(/^(\d+) /, "$1. "))
+    .join("\n");
+
 const LawSidePanel: React.FC<LawSidePanelProps> = ({ lawName, articleNumber, onClose }) => {
   const [articles, setArticles] = useState<LawArticle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,7 +120,7 @@ const LawSidePanel: React.FC<LawSidePanelProps> = ({ lawName, articleNumber, onC
               제{article.article_number}조
             </div>
             <div style={{ fontSize: "0.875rem", lineHeight: 1.7, color: "#374151", whiteSpace: "pre-wrap" }}>
-              {article.text}
+              {formatArticleText(article.text)}
             </div>
             {article.enforcement_date && (
               <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: "8px" }}>
