@@ -216,6 +216,7 @@ async def get_chat_history(
     sql = text("""
         SELECT
             id,
+            session_id,
             role,
             content,
             metadata,
@@ -236,6 +237,7 @@ async def get_chat_history(
             for row in rows:
                 history.append({
                     "id": row.id,
+                    "session_id": row.session_id,
                     "role": row.role,
                     "content": row.content,
                     "tool": row.metadata.get("tool") if row.metadata else None,
