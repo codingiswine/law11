@@ -202,7 +202,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         const response = await fetch(`${API_BASE_URL}/api/ask`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: "linkcampus", question: activeQuestion, session_id: sessionId }),
+          body: JSON.stringify({ user_id: "law11_user", question: activeQuestion, session_id: sessionId }),
           signal: controller.signal,
         });
 

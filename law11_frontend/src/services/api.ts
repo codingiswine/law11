@@ -58,7 +58,7 @@ export class ApiService {
 
   static async getHistory(): Promise<SessionSummary[]> {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/history?user_id=linkcampus&limit=200`);
+      const response = await fetch(`${API_BASE_URL}/api/history?user_id=law11_user&limit=200`);
       if (!response.ok) return [];
       const data = await response.json();
       const rows: any[] = data.history || [];
