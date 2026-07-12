@@ -74,4 +74,5 @@ law11_backend/eval/results/*.json
 # 🛠️ INTERNAL DEV DOCS (Claude Code 워크플로우)
 # =========================================
 docs/superpowers/
+.claude/
 
