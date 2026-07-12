@@ -15,6 +15,14 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onNewSession, onLoa
     ApiService.getHistory().then(setSessions);
   }, [currentSessionId]);
 
+  const handleDelete = async (sessionId: string) => {
+    await ApiService.deleteSession(sessionId);
+    setSessions(prev => prev.filter(s => s.session_id !== sessionId));
+    if (sessionId === currentSessionId) {
+      onNewSession();
+    }
+  };
+
   return (
     <div style={{
       width: "240px",
@@ -65,37 +73,66 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onNewSession, onLoa
           </div>
         )}
         {sessions.map(s => (
-          <button
+          <div
             key={s.session_id}
-            onClick={() => onLoadSession(s.session_id)}
             style={{
-              width: "100%",
-              padding: "8px 10px",
+              display: "flex",
+              alignItems: "center",
               background: s.session_id === currentSessionId ? "#2a2a2a" : "transparent",
-              border: "none",
               borderRadius: "6px",
-              color: s.session_id === currentSessionId ? "#ffffff" : "#9a9a9a",
-              fontSize: "0.8rem",
-              cursor: "pointer",
-              textAlign: "left",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              display: "block",
               marginBottom: "2px",
             }}
             onMouseEnter={e => {
               if (s.session_id !== currentSessionId)
                 e.currentTarget.style.background = "#242424";
+              const del = e.currentTarget.querySelector<HTMLElement>("[data-del]");
+              if (del) del.style.visibility = "visible";
             }}
             onMouseLeave={e => {
               if (s.session_id !== currentSessionId)
                 e.currentTarget.style.background = "transparent";
+              const del = e.currentTarget.querySelector<HTMLElement>("[data-del]");
+              if (del) del.style.visibility = "hidden";
             }}
-            title={s.title}
           >
-            {s.title || "대화"}
-          </button>
+            <button
+              onClick={() => onLoadSession(s.session_id)}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: "8px 10px",
+                background: "transparent",
+                border: "none",
+                color: s.session_id === currentSessionId ? "#ffffff" : "#9a9a9a",
+                fontSize: "0.8rem",
+                cursor: "pointer",
+                textAlign: "left",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={s.title}
+            >
+              {s.title || "대화"}
+            </button>
+            <button
+              data-del
+              onClick={() => handleDelete(s.session_id)}
+              style={{
+                visibility: "hidden",
+                flexShrink: 0,
+                padding: "4px 8px",
+                background: "transparent",
+                border: "none",
+                color: "#666",
+                fontSize: "0.75rem",
+                cursor: "pointer",
+              }}
+              title="대화 삭제"
+            >
+              ✕
+            </button>
+          </div>
         ))}
         {sessions.length === 0 && (
           <div style={{ padding: "16px 10px", color: "#555", fontSize: "0.78rem" }}>

@@ -54,6 +54,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [isStreaming, setIsStreaming] = useState(false);
   const [funnyMessage, setFunnyMessage] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const stopRef = useRef<(() => void) | null>(null);
 
   const streamStartRef = useRef(onStreamStart);
   const streamCompleteRef = useRef(onStreamComplete);
@@ -94,9 +95,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     // 완료가 새 질문에 잘못 발화되는 경합이 원천적으로 불가능하다.
     let networkDone = false;
     let completed = false;
+    let manuallyStopped = false;
     let revealedLength = 0;
     const revealTimer = setInterval(() => {
-      if (revealedLength < latestAnswer.length) {
+      if (!manuallyStopped && revealedLength < latestAnswer.length) {
         revealedLength = Math.min(revealedLength + 2, latestAnswer.length);
         setDisplayedAnswer(latestAnswer.slice(0, revealedLength));
       } else if (networkDone && !completed) {
@@ -105,6 +107,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         streamCompleteRef.current?.(latestAnswer, latestMessageId, latestSources);
       }
     }, 15);
+
+    // ✅ 생성 중지: 스트림을 끊고, 지금까지 받은 부분 답변을 그대로 확정한다.
+    // networkDone을 세워두면 기존 완료 머신이 알아서 completion을 발화한다.
+    stopRef.current = () => {
+      if (manuallyStopped || completed) return;
+      manuallyStopped = true;
+      networkDone = true;
+      // 화면에 보인 만큼만 확정 (멈춘 지점 = 저장되는 지점)
+      latestAnswer = latestAnswer.slice(0, revealedLength);
+      controller.abort();
+      reader?.cancel().catch(() => undefined);
+      setIsStreaming(false);
+    };
 
     let funnyTimer: ReturnType<typeof setInterval> | null = null;
     let funnyIndex = -1;
@@ -233,7 +248,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           handleLine(buffer);
         }
       } catch (error) {
-        if (isCancelled) return;
+        // 수동 중지 시의 AbortError는 오류가 아님 — 완료 머신이 부분 답변을 확정한다
+        if (isCancelled || manuallyStopped) return;
         const message =
           error instanceof Error ? error.message : "알 수 없는 오류가 발생했습니다.";
         pushStatus(message, true);
@@ -250,6 +266,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
     return () => {
       isCancelled = true;
+      stopRef.current = null;
       controller.abort();
       clearInterval(revealTimer);
       if (funnyTimer) clearInterval(funnyTimer);
@@ -316,6 +333,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               <div className="text-xs text-gray-400 italic">{funnyMessage}</div>
             )}
           </div>
+          {!!activeQuestion && (
+            <button
+              onClick={() => stopRef.current?.()}
+              className="text-xs text-gray-500 border border-gray-300 rounded-full px-3 py-1 hover:bg-gray-100"
+            >
+              ⏹ 생성 중지
+            </button>
+          )}
         </div>
       )}
 
