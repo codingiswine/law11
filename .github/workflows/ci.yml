@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: law11_backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: law11_backend/requirements.txt
+      - run: pip install -r requirements.txt pytest pytest-asyncio
+      - run: python -m pytest tests/ -v
+        env:
+          # 테스트는 전부 mock 기반 — 실제 API/DB 호출 없음
+          OPENAI_API_KEY: sk-dummy-ci
+          DB_PASS: dummy
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: law11_frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: law11_frontend/package-lock.json
+      - run: npm ci
+      # build = "tsc -b && vite build" — 타입체크와 번들 빌드를 한 번에 검증
+      - run: npm run build
