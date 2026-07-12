@@ -6,14 +6,15 @@ interface SidebarProps {
   currentSessionId: string;
   onNewSession: () => void;
   onLoadSession: (sessionId: string) => void;
+  refreshKey?: number;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onNewSession, onLoadSession }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onNewSession, onLoadSession, refreshKey }) => {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
 
   useEffect(() => {
     ApiService.getHistory().then(setSessions);
-  }, [currentSessionId]);
+  }, [currentSessionId, refreshKey]);
 
   const handleDelete = async (sessionId: string) => {
     await ApiService.deleteSession(sessionId);

@@ -11,6 +11,7 @@ function App() {
   const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
   const [selectedLaw, setSelectedLaw] = useState<{ name: string; article: string } | null>(null);
+  const [historyVersion, setHistoryVersion] = useState(0);
 
   const handleSearch = (query: string) => {
     if (!query.trim()) return;
@@ -40,6 +41,7 @@ function App() {
       setMessages(prev => [...prev, { role: "assistant", content: answer, messageId, sources: sources ?? [] }]);
     }
     setActiveQuestion(null);
+    setHistoryVersion(v => v + 1); // 새로 저장된 대화가 사이드바 목록에 바로 반영되도록
   }, []);
 
   const handleLawClick = useCallback((ref: LawReference) => {
@@ -74,6 +76,7 @@ function App() {
         currentSessionId={sessionId}
         onNewSession={handleNewSession}
         onLoadSession={handleLoadSession}
+        refreshKey={historyVersion}
       />
 
       {/* ── 가운데 채팅 영역 ── */}
