@@ -296,25 +296,28 @@ judge: `gpt-4o-mini` · ragas 0.1.21 기준 측정값입니다.
 ### 평가 실행
 
 ```bash
-cd law11_backend && source ../.venv/bin/activate
+# ⚠️ ragas 0.1.x는 앱이 고정한 langchain 0.3.x와 의존성이 충돌하므로
+# 앱 환경이 아닌 백엔드 컨테이너 안에 일회성으로 설치해 실행합니다
+# (컨테이너 재생성 시 초기화 → 앱 환경 오염 없음)
+docker compose exec fastapi pip install -r eval/requirements-eval.txt
 
 # 전체 평가 (30케이스) + 직전 결과와 자동 비교
-python -m eval.harness
+docker compose exec fastapi python -m eval.harness
 
 # 빠른 확인 (5케이스 smoke)
-python -m eval.harness --smoke
+docker compose exec fastapi python -m eval.harness --smoke
 
 # 회귀 테스트 (5% 이상 하락 시 exit 1)
-python -m eval.harness --compare
+docker compose exec fastapi python -m eval.harness --compare
 
 # 라우터 정확도
-python -m eval.eval_router
+docker compose exec fastapi python -m eval.eval_router
 
 # 검색 성능 (top-k 비교)
-python -m eval.eval_retrieval
+docker compose exec fastapi python -m eval.eval_retrieval
 
 # 할루시네이션 + Citation 검증
-python -m eval.eval_hallucination
+docker compose exec fastapi python -m eval.eval_hallucination
 ```
 
 ---

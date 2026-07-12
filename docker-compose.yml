@@ -10,6 +10,7 @@ services:
     volumes:
       - ./law11_backend/app:/app/app
       - ./law11_backend/core:/app/core
+      - ./law11_backend/eval:/app/eval
       - ./law11_backend/.env:/app/.env
       - ./.cache:/app/.cache
     env_file:
