@@ -1,33 +1,8 @@
-import type { QueryRequest, Source, LawContentResponse, Message, SessionSummary } from '../types';
+import type { LawContentResponse, Message, SessionSummary } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export class ApiService {
-  static async askQuestion(request: QueryRequest): Promise<ReadableStream<Uint8Array>> {
-    console.log('🌐 [API] 요청 URL:', `${API_BASE_URL}/api/ask`);
-    console.log('📤 [API] 요청 데이터:', request);
-
-    const response = await fetch(`${API_BASE_URL}/api/ask`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(request),
-    });
-
-    console.log('📥 [API] 응답 상태:', response.status);
-    console.log('📋 [API] 응답 헤더:', Object.fromEntries(response.headers.entries()));
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ [API] 에러 응답:', errorText);
-      throw new Error(`HTTP error! status: ${response.status}, body: ${errorText}`);
-    }
-
-    console.log('✅ [API] 스트림 반환');
-    return response.body!;
-  }
-
   static async submitFeedback(messageId: number, value: 1 | -1): Promise<void> {
     await fetch(`${API_BASE_URL}/api/feedback`, {
       method: 'POST',
@@ -46,16 +21,6 @@ export class ApiService {
     return response.json();
   }
 
-  static async getSources(query: string): Promise<Source[]> {
-    const response = await fetch(`${API_BASE_URL}/api/sources?query=${encodeURIComponent(query)}`);
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    return response.json();
-  }
-
   static async getHistory(): Promise<SessionSummary[]> {
     try {
       const response = await fetch(`${API_BASE_URL}/api/history?user_id=law11_user&limit=200`);
@@ -63,15 +28,21 @@ export class ApiService {
       const data = await response.json();
       const rows: any[] = data.history || [];
 
-      // session_id 별로 그룹핑, 첫 user 메시지를 title로
+      // session_id 별로 그룹핑 — 제목은 세션의 "첫" user 메시지,
+      // 정렬은 마지막 활동 시각 기준 (최근에 이어간 대화가 위로)
       const sessionMap = new Map<string, { title: string; created_at: string }>();
-      for (const row of rows) {
+      for (const row of [...rows].reverse()) { // API는 최신순 → 시간순으로 뒤집기
         const sid = row.session_id || "default";
-        if (!sessionMap.has(sid) && row.role === "user") {
-          sessionMap.set(sid, {
-            title: row.content.slice(0, 60),
-            created_at: row.created_at,
-          });
+        const existing = sessionMap.get(sid);
+        if (!existing) {
+          if (row.role === "user") {
+            sessionMap.set(sid, {
+              title: row.content.slice(0, 60),
+              created_at: row.created_at,
+            });
+          }
+        } else {
+          existing.created_at = row.created_at;
         }
       }
 
@@ -81,6 +52,10 @@ export class ApiService {
     } catch {
       return [];
     }
+  }
+
+  static async deleteSession(sessionId: string): Promise<void> {
+    await fetch(`${API_BASE_URL}/api/session/${sessionId}`, { method: "DELETE" });
   }
 
   static async getSession(sessionId: string): Promise<Message[]> {
