@@ -15,6 +15,17 @@ PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → 
   <img src="assets/law11_demo.gif" alt="Law11 Demo" width="800">
 </div>
 
+<table>
+  <tr>
+    <td><img src="assets/demo_shot1.png" alt="랜딩 화면" width="400"></td>
+    <td><img src="assets/demo_shot2.png" alt="법령 답변 및 참고 법령 배지" width="400"></td>
+  </tr>
+  <tr>
+    <td><img src="assets/demo_shot3.png" alt="LawSidePanel — DB 조문 원문" width="400"></td>
+    <td><img src="assets/demo_shot4.png" alt="LawSidePanel — DB 미등록 법령의 법령정보원 링크" width="400"></td>
+  </tr>
+</table>
+
 ---
 
 ## 목차
