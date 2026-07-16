@@ -5,6 +5,21 @@ from core.plan import ToolPlan
 from app.tools import law_rag_tool
 
 
+def test_mentions_unknown_law_true_for_unknown_law_plus_article():
+    """DB에 없는 법 + 조문 번호 → True (예: 소방기본법)"""
+    assert law_rag_tool.mentions_unknown_law("소방기본법 2조", None, "2") is True
+
+
+def test_mentions_unknown_law_false_when_law_name_known():
+    """9개 법 중 하나로 인식됐으면(law_name 있음) → False (정상 경로 유지)"""
+    assert law_rag_tool.mentions_unknown_law("산업안전보건법 17조", "산업안전보건법", "17") is False
+
+
+def test_mentions_unknown_law_false_without_article_number():
+    """조문 번호 없는 일반 개념 질문 → False (예: '관련법 뭐있어?')"""
+    assert law_rag_tool.mentions_unknown_law("관련법 뭐있어?", None, "") is False
+
+
 def _make_hits(n: int):
     return [
         MagicMock(
