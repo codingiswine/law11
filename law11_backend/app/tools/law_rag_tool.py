@@ -142,6 +142,23 @@ def detect_law_name(query: str) -> Optional[str]:
     return None
 
 
+# ⚠️ 할루시네이션 방지: "OOO법 N조"처럼 구체적 법명+조문을 물었는데 그 법이
+# 우리 9개 법 목록(detect_law_name)에 없는 경우를 감지한다. 이 경우 전체
+# 말뭉치 의미검색(Qdrant)은 다른 법의 유사 조문을 threshold 이상으로 찾아올 수
+# 있고, GPT가 그 내용을 "사용자가 물은 법의 조문인 것처럼" 잘못 인용하는
+# 위험이 있다 (실측: "소방기본법 2조"가 재난및안전관리기본법 조문을 근거로
+# "[소방기본법] 제2조"라고 사칭해 답변 — 배지는 실제 검색된 법을 정직하게
+# 보여줬지만 본문과 안 맞았음). "관련법 뭐있어?"처럼 조문 번호 없는 일반
+# 질문은 이 패턴에 안 걸리므로 기존 넓은 의미검색 경로를 그대로 탄다.
+_UNKNOWN_LAW_HINT = re.compile(r"[가-힣]{2,15}(?:법률|법|규칙|시행령)\s*(?:제)?\s*\d+\s*조")
+
+
+def mentions_unknown_law(query: str, known_law_name: Optional[str], article_number: str) -> bool:
+    if known_law_name or not article_number:
+        return False
+    return bool(_UNKNOWN_LAW_HINT.search(query))
+
+
 # ─────────────────────────────
 # 조건 기반 법령 우선순위 매핑
 # 단순 유사도 검색이 아닌, 질문의 위험 유형으로 법령 범위를 좁힌다.
@@ -188,6 +205,7 @@ async def run(plan):
     article_number = article_match.group(1) if article_match else ""
 
     is_direct_article_query = bool(law_name and article_number)
+    unknown_law_hint = mentions_unknown_law(query, law_name, article_number)
 
     # ① 법령명 미인식 시 → 조건 기반 법령 우선 선택 후 Qdrant 검색
     if not law_name:
@@ -224,7 +242,9 @@ async def run(plan):
                 results = [results[i] for i in ranked_indices]
             # 0.45: 법령명 미인식 상태의 전체 검색이므로 넓게 허용.
             # 사용자가 법령 용어를 쓰지 않아도 관련 조문을 건질 수 있어야 한다.
-            if results and results[0].score >= 0.45:
+            # 단, unknown_law_hint(구체적 법명+조문을 물었는데 그 법이 DB에
+            # 없는 경우)면 threshold를 넘겨도 신뢰하지 않고 웹 폴백으로 보낸다.
+            if results and results[0].score >= 0.45 and not unknown_law_hint:
                 # 중복 조문 제거 (Cross-Encoder 순서 기준으로 우선순위 결정)
                 deduped = []
                 seen_articles = set()
