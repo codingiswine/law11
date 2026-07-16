@@ -116,8 +116,12 @@ async def _classify_with_llm(question: str, history: str) -> str:
 
 async def detect_tool(user_id: str, text: str, session_id: Optional[str] = None) -> ToolPlan:
     history      = await _load_session_context(session_id) if session_id else ""
-    full_query   = f"{history}\n{text}".strip().lower()
-    normalized_q = unicodedata.normalize("NFC", full_query.replace(" ", ""))
+    # ⚠️ 반드시 "현재 질문"만으로 정규화한다. history를 섞으면 이전 답변에 있던
+    # "기준"/"법적 근거" 같은 문구 때문에 이후 모든 메시지가 LAW_RAG_TOOL로
+    # 오분류된다 (실측: "계단 관련 사고 뉴스 찾아봐"가 이전 턴의 법령 답변
+    # 때문에 법령 키워드로 잘못 매치됨). history는 LLM 분류(_classify_with_llm)와
+    # tool 실행 컨텍스트(ToolPlan.args["context"])에서만 별도로 사용한다.
+    normalized_q = unicodedata.normalize("NFC", text.lower().replace(" ", ""))
     raw_q_lower  = text.lower()
 
     def _plan(tool: str) -> ToolPlan:
