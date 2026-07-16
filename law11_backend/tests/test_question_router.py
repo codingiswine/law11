@@ -146,6 +146,19 @@ async def test_detect_tool_ignores_law_keywords_from_session_history():
 
 
 @pytest.mark.asyncio
+async def test_detect_tool_recent_thing_not_mistaken_for_legal_basis():
+    """"최근 거"가 공백 제거 후 "근거"로 오탐되어 LAW_RAG_TOOL로 잘못 분류되던 버그
+    (실측: 뉴스 목록 후속질문 "그 중에 제일 최근 거 자세히 알려줘"가
+    LAW_RAG_TOOL로 잘못 라우팅됨)"""
+    with patch("app.services.question_router._load_session_context", new_callable=AsyncMock, return_value=""), \
+         patch("app.services.question_router._classify_with_llm", new_callable=AsyncMock, return_value="news_tool") as mock_llm:
+        plan = await detect_tool("user1", "그 중에 제일 최근 거 자세히 알려줘", session_id="s1")
+
+    mock_llm.assert_called_once()
+    assert plan.tool == "news_tool"
+
+
+@pytest.mark.asyncio
 async def test_detect_tool_non_law_tool_skips_vector_check():
     """LLM이 news_tool 선택 → _check_vector_relevance 호출 없음"""
     _llm_cache.clear()
