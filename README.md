@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.2.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.2.1-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -638,6 +638,22 @@ def _extract_search_term(query: str) -> str:
 ```
 
 **영향**: `law_test` 참조 제거(존재한 적 없는 테이블, `law_rag_tool`과 역할도 중복), 이전 대화 기록 조회가 실제로 동작하기 시작합니다. 라이브 검증: "비계 설치 안전 기준" 질문 후 "비계 기록에서 확인해줘"로 물으면 실제 이전 턴을 찾아 반환함을 확인. 회귀 테스트 3개 추가.
+
+---
+
+### 16. 두 법령 비교 질문에서 답변 본문은 조문을 인용하는데 출처 배지가 하나도 안 뜸 `v1.2.1`
+
+**문제**: "산업안전보건법이랑 중대재해처벌법 처벌 수위 차이가 뭐야?" 같은 두 법령 비교 질문을 라이브로 테스트하다 발견 — Web fallback 답변 본문은 "**산업안전보건법** 제66조 제1항", "**중대재해처벌법** 제2조 제1항"처럼 구체적 조문을 자신 있게 인용하는데, 출처(source) 배지는 하나도 뜨지 않았습니다. 원인은 `_extract_web_citations()`가 `[법령명] 제N조`처럼 대괄호 형식만 정규식으로 인식하는데, 프롬프트가 그 형식을 요청해도 GPT가 (temperature>0 영향으로) `**법령명** 제N조`처럼 볼드 마크다운으로 답할 때가 있어서 — 이 경우 인용은 파싱에 실패해 배지가 0개가 되고, 사용자는 답변에 나온 조문이 실제로 근거가 있는지 확인할 방법이 없었습니다.
+
+```python
+# 수정 전 — 대괄호 형식만 인식
+pattern = r'\[([^\]]{2,30}?)\]\s*제(\d+(?:의\d+)?)조'
+
+# 수정 후 — 대괄호/볼드 마크다운 둘 다 인식
+pattern = r'(?:\[([^\]]{2,30}?)\]|\*\*([^\*\n]{2,30}?)\*\*)\s*제(\d+(?:의\d+)?)조'
+```
+
+**영향**: GPT가 어떤 포맷으로 답하든 답변 본문에 등장하는 법령/조문이 출처 배지로 정확히 노출됩니다. 라이브 검증: 동일한 두 법령 비교 질문 재현 후 `산업안전보건법 제26조`, `중대재해처벌법 제4조` 배지가 정상적으로 표시됨을 확인. 회귀 테스트 2개 추가.
 
 ---
 

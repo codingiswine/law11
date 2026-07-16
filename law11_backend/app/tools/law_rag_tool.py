@@ -15,12 +15,21 @@ import re, urllib.parse, aiohttp
 
 
 def _extract_web_citations(answer: str) -> list:
-    """웹 fallback 답변 텍스트에서 [법령명] 제N조 패턴 추출"""
+    """웹 fallback 답변 텍스트에서 법령명+제N조 패턴 추출.
+
+    ⚠️ 프롬프트는 "[법령명] 제X조" 대괄호 형식을 요청하지만, GPT가 온도>0
+    영향으로 "**법령명** 제X조"처럼 볼드 마크다운으로 답할 때가 있다 (실측:
+    "산업안전보건법이랑 중대재해처벌법 처벌 수위 차이" 질문에서 답변 본문은
+    구체적 조문을 인용했는데 대괄호 정규식이 매치 안 돼 출처 배지가 하나도
+    안 뜸 — 사용자가 답변 내용을 검증할 방법이 없었음). 대괄호/볼드 둘 다
+    매치하도록 확장.
+    """
     citations = []
     seen = set()
-    pattern = r'\[([^\]]{2,30}?)\]\s*제(\d+(?:의\d+)?)조'
+    pattern = r'(?:\[([^\]]{2,30}?)\]|\*\*([^\*\n]{2,30}?)\*\*)\s*제(\d+(?:의\d+)?)조'
     for rank, m in enumerate(re.finditer(pattern, answer), start=1):
-        law_name, article = m.group(1).strip(), m.group(2)
+        law_name = (m.group(1) or m.group(2)).strip()
+        article = m.group(3)
         key = f"{law_name}:{article}"
         if key not in seen:
             seen.add(key)
