@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-websearch_tool.py (v3.1, Async Parallel)
+websearch_tool.py (v4.0, Tavily)
 ────────────────────────────────────────────
 ✅ 개선 요약
-1️⃣ requests → aiohttp (완전 비동기화)
-2️⃣ Google + Naver 뉴스/블로그 병렬 실행 (asyncio.gather)
-3️⃣ summarize_web() 호출 시 완전 async-safe
-4️⃣ 결과 구조 유지 (summaries + raw_results)
+1️⃣ Google Custom Search → Tavily (Google은 2026년부로 신규 발급 중단, 기존 키도 2027-01-01 종료 예정)
+2️⃣ 동시 호출 수를 세마포어로 제한 — 부하테스트에서 발견된 "동시 요청 몰릴 때 검색 API 429" 문제 예방
+3️⃣ 결과 구조 유지 (summaries + raw_results)
 """
 
 import aiohttp
@@ -20,6 +19,12 @@ except ModuleNotFoundError:
     from app.config import settings
     from core.stream import ToolChunk
 
+
+# ponytail: 동시 웹 검색 호출 수 제한. 부하테스트(20명 동시)에서 Naver API가
+# 초당 요청 제한(429)에 걸리는 걸 실측했음 — 공급자를 바꿔도 몰리면 똑같이
+# 걸리는 문제라 호출 자체를 줄로 세워서 예방한다. 5는 임의값이라 실사용
+# 트래픽 늘면 조정.
+_SEARCH_SEMAPHORE = asyncio.Semaphore(5)
 
 
 # --------------------------
@@ -36,7 +41,7 @@ async def naver_search(session, query: str, search_type: str = "news", display: 
     params = {"query": query, "display": display, "sort": "date"}
 
     try:
-        async with session.get(url, headers=headers, params=params, timeout=10) as res:
+        async with _SEARCH_SEMAPHORE, session.get(url, headers=headers, params=params, timeout=20) as res:
             if res.status != 200:
                 print(f"⚠️ Naver {search_type} HTTP {res.status}")
                 return []
@@ -57,36 +62,33 @@ async def naver_search(session, query: str, search_type: str = "news", display: 
 
 
 # --------------------------
-# 🔍 비동기 Google 검색
+# 🔍 비동기 Tavily 검색 (일반 웹 전체)
 # --------------------------
-async def google_search(session, query: str, num: int = 5) -> List[Dict]:
-    if not settings.GOOGLE_SEARCH_API_KEY or not settings.GOOGLE_SEARCH_ENGINE_ID:
+async def tavily_search(session, query: str, max_results: int = 5) -> List[Dict]:
+    if not settings.TAVILY_API_KEY:
         return []
-    url = "https://www.googleapis.com/customsearch/v1"
-    params = {
-        "key": settings.GOOGLE_SEARCH_API_KEY,
-        "cx": settings.GOOGLE_SEARCH_ENGINE_ID,
-        "q": f"{query} site:news.naver.com OR site:yna.co.kr OR site:kbs.co.kr OR site:sbs.co.kr OR site:mbc.co.kr OR site:chosun.com OR site:joongang.co.kr OR site:donga.com",
-        "num": num,
-    }
+    url = "https://api.tavily.com/search"
+    headers = {"Authorization": f"Bearer {settings.TAVILY_API_KEY}"}
+    payload = {"query": query, "max_results": max_results, "search_depth": "basic"}
+
     try:
-        async with session.get(url, params=params, timeout=10) as res:
+        async with _SEARCH_SEMAPHORE, session.post(url, headers=headers, json=payload, timeout=20) as res:
             if res.status != 200:
-                print(f"⚠️ Google HTTP {res.status}")
+                print(f"⚠️ Tavily HTTP {res.status}")
                 return []
             data = await res.json()
-            items = data.get("items", [])
+            items = data.get("results", [])
             return [
                 {
                     "title": i.get("title"),
-                    "link": i.get("link"),
-                    "snippet": i.get("snippet"),
-                    "source": "google_news",
+                    "link": i.get("url"),
+                    "snippet": i.get("content"),
+                    "source": "tavily",
                 }
                 for i in items
             ]
     except Exception as e:
-        print(f"⚠️ Google 검색 실패: {e}")
+        print(f"⚠️ Tavily 검색 실패: {e}")
         return []
 
 
@@ -94,14 +96,14 @@ async def google_search(session, query: str, num: int = 5) -> List[Dict]:
 # 🌐 통합 웹검색 (병렬)
 # --------------------------
 async def get_web_results(query: str) -> List[Dict]:
-    """Google + Naver 뉴스/블로그 비동기 병렬"""
+    """Tavily(일반 웹) + Naver 뉴스/블로그 비동기 병렬"""
     async with aiohttp.ClientSession() as session:
-        naver_news, naver_blog, google_news = await asyncio.gather(
+        naver_news, naver_blog, tavily_results = await asyncio.gather(
             naver_search(session, query, "news"),
             naver_search(session, query, "blog"),
-            google_search(session, query),
+            tavily_search(session, query),
         )
-    all_results = naver_news + naver_blog + google_news
+    all_results = tavily_results + naver_news + naver_blog
 
     # 중복 제거
     seen, unique_results = set(), []
