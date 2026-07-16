@@ -118,8 +118,15 @@ async def get_web_results(query: str) -> List[Dict]:
 # --------------------------
 # 🧠 GPT 요약 (비동기)
 # --------------------------
-async def summarize_web(query: str, max_results: int = 8) -> Dict:
-    """검색 결과를 GPT로 요약 (비동기, 법령 제외)"""
+async def summarize_web(query: str, max_results: int = 8, context: str = "") -> Dict:
+    """검색 결과를 GPT로 요약 (비동기, 법령 제외)
+
+    ⚠️ 검색(get_web_results) 자체는 대화 이력 없이 현재 질문만으로 하되,
+    요약 단계에서는 이전 대화(context)를 같이 줘야 "그거"/"그건" 같은
+    지시어가 뭘 가리키는지 GPT가 알 수 있다. 실측: context 없이 "그거 안
+    지키면 처벌은 어떻게 돼?"를 요약시켰더니 완전히 무관한 뉴스(Reddit 링크
+    포함)를 답변으로 냈음.
+    """
     if len(query) > 500:
         query = query[:500] + " ..."
 
@@ -129,18 +136,22 @@ async def summarize_web(query: str, max_results: int = 8) -> Dict:
     if not results:
         return {"summaries": "📰 관련 뉴스/블로그 검색 결과가 없습니다.", "raw_results": []}
 
-    # 뉴스/블로그 구분
-    context = "\n\n".join(
+    # 검색 결과 목록 (search_context) — 대화 이력(context)과는 별개
+    search_context = "\n\n".join(
         [f"[{i+1}] {r['title']}\n{r['snippet']}\n{r['link']}" for i, r in enumerate(results)]
     )
+    user_content = f"질문: {query}\n\n검색 결과:\n{search_context}"
+    if context:
+        user_content = f"[이전 대화]\n{context}\n\n{user_content}"
 
     messages = [
         {"role": "system", "content": (
             "너는 한국 뉴스·블로그 요약 전문가야.\n"
             "법조문 언급 없이 현실적인 뉴스·블로그 요약만 제시해.\n"
+            "이전 대화가 주어지면 '그거'/'그건' 같은 지시어가 무엇을 가리키는지 이전 대화를 참고해서 파악해.\n"
             "[뉴스]\n1. 제목 / 핵심 요약\n[블로그]\n1. 작성자 / 주요 관점 요약"
         )},
-        {"role": "user", "content": f"질문: {query}\n\n검색 결과:\n{context}"}
+        {"role": "user", "content": user_content}
     ]
 
     try:
@@ -164,9 +175,10 @@ async def summarize_web(query: str, max_results: int = 8) -> Dict:
 async def run(plan):
     """question_router → websearch_tool 직접 라우팅 시 호출되는 진입점"""
     query = plan.args.get("query", "")
+    context = plan.args.get("context", "")
     yield ToolChunk(type="status", payload="🌐 웹 검색 중...")
 
-    result = await summarize_web(query)
+    result = await summarize_web(query, context=context)
     summary = result.get("summaries", "")
     raw = result.get("raw_results", [])
 

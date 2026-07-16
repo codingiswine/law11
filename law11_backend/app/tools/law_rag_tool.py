@@ -315,7 +315,7 @@ async def run(plan):
 
         # Qdrant에서 못 찾은 경우만 Web fallback
         yield ToolChunk(type="status", payload="⚠️ 관련 법령 없음 → Web 검색으로 보완")
-        web_result = await summarize_web(query)
+        web_result = await summarize_web(query, context=context)
         web_summary = web_result.get("summaries", "")
         resp = await settings.openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -433,7 +433,7 @@ async def run(plan):
     # ④ Web fallback (모든 조문 검색 실패)
     if not text_val or not isinstance(text_val, str) or not text_val.strip():
         yield ToolChunk(type="status", payload="⚠️ 조문 없음 → Web fallback 실행")
-        web_result = await summarize_web(query)
+        web_result = await summarize_web(query, context=context)
         web_summary = web_result.get("summaries", "")
         resp = await settings.openai_client.chat.completions.create(
             model="gpt-4o-mini",
