@@ -129,6 +129,23 @@ async def test_detect_tool_fast_path_skips_vector_check():
 
 
 @pytest.mark.asyncio
+async def test_detect_tool_ignores_law_keywords_from_session_history():
+    """이전 턴 답변에 법령 키워드가 있어도, 현재 질문 자체의 뉴스 키워드로 라우팅되어야 함
+    (회귀 테스트: '계단 관련 사고 뉴스 찾아봐'가 이전 턴의 '기준/법적 근거' 문구 때문에
+    LAW_RAG_TOOL로 잘못 분류되던 버그)"""
+    law_heavy_history = (
+        "사용자: 비계 설치 안전 기준 알려줘\n"
+        "Law11: 🔹 법적 근거\n[산업안전보건법] 제39조 제1항: 사업주는 필요한 조치를 취하여야 한다."
+    )
+    with patch("app.services.question_router._load_session_context", new_callable=AsyncMock, return_value=law_heavy_history), \
+         patch("app.services.question_router._check_vector_relevance", new_callable=AsyncMock) as mock_vec:
+        plan = await detect_tool("user1", "계단 관련 사고 뉴스 찾아봐", session_id="s1")
+
+    mock_vec.assert_not_called()
+    assert plan.tool == "news_tool"
+
+
+@pytest.mark.asyncio
 async def test_detect_tool_non_law_tool_skips_vector_check():
     """LLM이 news_tool 선택 → _check_vector_relevance 호출 없음"""
     _llm_cache.clear()
