@@ -4,6 +4,7 @@ from core.stream import ToolChunk
 
 async def run(plan):
     query = plan.args.get("query", "")
+    context = plan.args.get("context", "")
     yield ToolChunk(type="status", payload=f"💬 일반 대화 시작: {query}")
 
     system_msg = """너는 산업안전보건 법령 전문 어시스턴트 Law11야.
@@ -17,12 +18,19 @@ async def run(plan):
 4️⃣ 가능한 한 실무적·사실적 근거를 들어 설명해.
 """
 
+    # ⚠️ system_msg가 "이전 대화 내용을 참고해"라고 지시하지만, 실제로는
+    # plan.args["context"]를 한 번도 읽지 않아 현재 질문만 보냈었다 (websearch_tool
+    # 에서 오늘 이미 발견/수정한 것과 같은 버그 클래스). 실측: "비계 설치 안전
+    # 기준 알려줘" 다음 "그거 다 지키려니까 진짜 힘들다"를 물으면 "그거"가
+    # 비계를 가리키는 걸 몰라 산업안전보건법 전반에 대한 일반론만 답했음.
+    user_content = f"[이전 대화 및 질문]\n{context}\n\n{query}" if context else f"[질문]\n{query}"
+
     try:
         stream = await settings.openai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_msg},
-                {"role": "user", "content": f"[이전 대화 및 질문]\n{query}"},
+                {"role": "user", "content": user_content},
             ],
             temperature=0.5,
             max_tokens=800,
