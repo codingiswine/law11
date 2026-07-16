@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.3.1-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.3.2-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -708,6 +708,30 @@ async def run(plan):
 **영향**: 감정 대화 중 이전 법령 질문을 지시어("그거"/"그건")로 참조하면 실제로 그 내용을 반영해 답변합니다. 라이브 검증: 동일 시나리오 재현 후 답변이 "비계", "안전난간(0.9미터)"을 구체적으로 언급하며 위로함을 확인. 회귀 테스트 2개 추가.
 
 **추가로 발견한 것 (아직 미해결)**: "그거가 정확히 뭐였는지 다시 말해줘"처럼 자연스러운 표현으로 이전 대화 재확인을 요청하면, LLM 라우터가 이를 `db_query_tool_async`("이전 대화 기록 조회 요청")로 분류하는 것 자체는 합리적이지만, 그 tool의 검색 로직(`_extract_search_term`)이 라우터 트리거/요청동사를 제거하는 방식이라 "다시 말해줘"처럼 명시적 주제어가 없는 자연어 요청에서는 검색어가 텅 비거나 무의미해져 결과를 못 찾습니다. 별도 논의 필요.
+
+---
+
+### 19. db_query_tool_async가 자연어 재확인 요청("다시 말해줘" 등)에서 계속 결과를 못 찾던 문제 `v1.3.2`
+
+**문제**: #18에서 미해결로 남긴 문제를 이어서 확인 — `_extract_search_term`은 알려진 트리거/요청동사(`확인해줘`/`알려줘`/`찾아줘`/`보여줘` 등)만 제거하는데, "말해줘"는 그 목록에 없어서 "그거가 정확히 뭐였는지 다시 말해줘"를 물으면 문장 전체가 그대로 남아 어떤 과거 메시지와도 매치되지 않았습니다. 문제는 이 목록을 아무리 늘려도(“말해줘”, “알려줄래”, “기억나?” 등) 자연어 표현은 무한히 다양해서 근본적으로 다 못 잡는다는 점입니다.
+
+```python
+# 수정 전 — 키워드 검색 실패 시 그냥 빈 결과
+rows = await conn.execute(sql, {"kw": f"%{search_term}%"})
+return [dict(r._mapping) for r in rows.fetchall()]  # 0건이면 그대로 []
+
+# 수정 후 — 키워드 검색이 0건이면 최근 대화로 폴백 (특정 문구를 계속 추가하는
+# 대신, "검색이 안 됐다"는 사실 자체로 일반화)
+if search_term:
+    rows = await conn.execute(_KEYWORD_SEARCH_SQL, {"kw": f"%{search_term}%"})
+    results = rows.fetchall()
+    if results:
+        return [dict(r._mapping) for r in results]
+rows = await conn.execute(_RECENT_HISTORY_SQL)
+return [dict(r._mapping) for r in rows.fetchall()]
+```
+
+**영향**: "비계 기록에서 확인해줘"처럼 명확한 주제어가 있으면 기존처럼 정확히 매치하고, "다시 말해줘" 같은 주제어 없는 자연어 요청은 최근 대화 5건으로 폴백합니다. 라이브 검증: 동일 시나리오("산업안전보건법상 비계 설치 안전 기준" 질문 후 "그거가 정확히 뭐였는지 다시 말해줘") 재현 후 가장 최근 대화(비계 관련 턴)가 정확히 첫 번째로 반환됨을 확인. 회귀 테스트 2개 추가.
 
 ---
 
