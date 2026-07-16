@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.3.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.3.1-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -683,6 +683,31 @@ async def event_stream():
 ```
 
 **영향**: 라이브 검증: `/api/metrics`에서 `agent_type="law_rag_tool"` (기존엔 항상 "unknown")과 실제 처리 시간을 반영한 duration(~24초, 10-30초 버킷)을 확인. DB 저장 실패 경고는 `error` 타입으로 통일해 프론트에서 기존 렌더링 경로로 표시되도록 함.
+
+---
+
+### 18. general_tool도 "이전 대화 참고"를 지시하면서 실제로는 context를 안 읽던 버그 `v1.3.1`
+
+**문제**: 테스트 후보 순회 — `general_tool.py`(감정 대화/잡담 tool)의 system prompt는 "이전 대화 내용을 참고해 문맥상 연결된 답변을 해"라고 GPT에게 지시하고, 사용자 메시지도 `"[이전 대화 및 질문]\n{query}"`로 라벨링돼 있었지만, 실제로는 `plan.args["context"]`를 한 번도 읽지 않고 현재 질문(`query`)만 그 자리에 그대로 넣고 있었습니다 — 오늘 `websearch_tool.py`에서 고친 것과 같은 버그 클래스가 다른 tool에도 남아 있었던 것입니다. 실측: "산업안전보건법상 비계 설치 안전 기준 알려줘" 다음 "휴... 그거 다 지키려니까 너무 힘들다"를 물으면, "그거"가 비계 규정을 가리키는 걸 몰라 "산업안전보건 법령 준수는 부담스러울 수 있습니다" 같은 일반론만 답했습니다.
+
+```python
+# 수정 전
+async def run(plan):
+    query = plan.args.get("query", "")
+    ...
+    {"role": "user", "content": f"[이전 대화 및 질문]\n{query}"},
+
+# 수정 후
+async def run(plan):
+    query = plan.args.get("query", "")
+    context = plan.args.get("context", "")
+    ...
+    user_content = f"[이전 대화 및 질문]\n{context}\n\n{query}" if context else f"[질문]\n{query}"
+```
+
+**영향**: 감정 대화 중 이전 법령 질문을 지시어("그거"/"그건")로 참조하면 실제로 그 내용을 반영해 답변합니다. 라이브 검증: 동일 시나리오 재현 후 답변이 "비계", "안전난간(0.9미터)"을 구체적으로 언급하며 위로함을 확인. 회귀 테스트 2개 추가.
+
+**추가로 발견한 것 (아직 미해결)**: "그거가 정확히 뭐였는지 다시 말해줘"처럼 자연스러운 표현으로 이전 대화 재확인을 요청하면, LLM 라우터가 이를 `db_query_tool_async`("이전 대화 기록 조회 요청")로 분류하는 것 자체는 합리적이지만, 그 tool의 검색 로직(`_extract_search_term`)이 라우터 트리거/요청동사를 제거하는 방식이라 "다시 말해줘"처럼 명시적 주제어가 없는 자연어 요청에서는 검색어가 텅 비거나 무의미해져 결과를 못 찾습니다. 별도 논의 필요.
 
 ---
 
