@@ -5,12 +5,12 @@ news_tool_v5.4_aiohttp (Law11 GPT-5 구조 완전 비동기판)
 ────────────────────────────────────────────
 ✅ 주요 개선
 1️⃣ requests → aiohttp 완전 비동기화
-2️⃣ Google/Naver 뉴스 동시 요청
+2️⃣ Tavily/Naver 뉴스 동시 요청 (Google 검색결과 직접 스크레이핑 제거)
 3️⃣ ToolChunk 기반 스트리밍 구조 유지
 ────────────────────────────────────────────
 """
 
-import os, re, datetime, asyncio, aiohttp
+import os, datetime, asyncio, aiohttp
 from typing import List, Dict, AsyncGenerator
 from urllib.parse import urlparse
 from app.config import settings
@@ -78,30 +78,34 @@ async def get_naver_news(session: aiohttp.ClientSession, query: str, max_results
 
 
 # ─────────────────────────────
-# 🌍 Google 뉴스 (aiohttp)
+# 🌍 Tavily 뉴스
 # ─────────────────────────────
-async def get_google_news(session: aiohttp.ClientSession, query: str, max_results: int = 5) -> List[Dict[str, str]]:
-    params = {"q": query, "tbm": "nws", "hl": "ko", "gl": "kr"}
-    headers = {"User-Agent": DEFAULT_UA}
+async def get_tavily_news(session: aiohttp.ClientSession, query: str, max_results: int = 5) -> List[Dict[str, str]]:
+    if not settings.TAVILY_API_KEY:
+        return []
+    url = "https://api.tavily.com/search"
+    headers = {"Authorization": f"Bearer {settings.TAVILY_API_KEY}"}
+    payload = {"query": query, "max_results": max_results, "search_depth": "basic", "topic": "news"}
 
-    async with session.get("https://www.google.com/search", params=params, headers=headers, timeout=8) as res:
-        res_text = await res.text()
-
-    blocks = re.findall(
-        r'<a href="/url\?q=(.*?)&amp.*?<div[^>]*class="BNeawe vvjwJb[^"]*">(.*?)</div>.*?<div[^>]*class="BNeawe s3v9rd AP7Wnd">(.*?)</div>',
-        res_text, re.S,
-    )
-    articles = []
-    for link, title, source in blocks[:max_results]:
-        clean_link = strip_tags(link)
-        articles.append({
-            "title": strip_tags(title),
-            "link": clean_link,
-            "source": brand_from_link(clean_link),
-            "pubDate": "정보 없음",
-            "description": "",
-        })
-    return articles
+    try:
+        async with session.post(url, headers=headers, json=payload, timeout=8) as res:
+            if res.status != 200:
+                return []
+            data = await res.json()
+            articles = []
+            for it in data.get("results", []):
+                link = it.get("url", "")
+                articles.append({
+                    "title": strip_tags(it.get("title", "")),
+                    "description": strip_tags(it.get("content", "")),
+                    "link": link,
+                    "source": brand_from_link(link),
+                    "pubDate": it.get("published_date") or "정보 없음",
+                })
+            return articles
+    except Exception as e:
+        print(f"⚠️ Tavily 뉴스 검색 실패: {e}")
+        return []
 
 
 # ─────────────────────────────
@@ -135,11 +139,11 @@ async def run(plan) -> AsyncGenerator[ToolChunk, None]:
     yield ToolChunk(type="status", payload=f"🗞️ '{query}' 관련 뉴스 검색 중...")
 
     async with aiohttp.ClientSession() as session:
-        google_task = asyncio.create_task(get_google_news(session, query))
+        tavily_task = asyncio.create_task(get_tavily_news(session, query))
         naver_task = asyncio.create_task(get_naver_news(session, query))
-        google, naver = await asyncio.gather(google_task, naver_task)
+        tavily, naver = await asyncio.gather(tavily_task, naver_task)
 
-    items = unique_preserve_order(google + naver)
+    items = unique_preserve_order(tavily + naver)
     if not items:
         yield ToolChunk(type="error", payload="❌ 관련 뉴스 기사를 찾지 못했습니다.")
         return

@@ -5,7 +5,7 @@ blog_tool_v5.4_aiohttp (Law11 GPT-5 완전 비동기판)
 ────────────────────────────────────────────
 ✅ 주요 개선
 1️⃣ requests → aiohttp 완전 비동기화
-2️⃣ Google/Naver 블로그 동시 요청
+2️⃣ Tavily/Naver 블로그 동시 요청 (Custom Search API 제거, 2027년 종료 예정)
 3️⃣ ToolChunk 기반 스트리밍 유지
 ────────────────────────────────────────────
 """
@@ -20,8 +20,6 @@ from app.tools._web_utils import strip_tags, unique_preserve_order
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-GOOGLE_CSE_ID = os.getenv("GOOGLE_CSE_ID")
 DEFAULT_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0 Safari/537.36"
@@ -71,30 +69,38 @@ async def get_naver_blogs(session: aiohttp.ClientSession, query: str, max_result
 
 
 # ─────────────────────────────
-# 🌍 구글 블로그 (Custom Search API, aiohttp)
+# 🌍 Tavily 블로그
 # ─────────────────────────────
-async def get_google_blogs(session: aiohttp.ClientSession, query: str, max_results: int = 5) -> List[Dict[str, str]]:
-    if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
+async def get_tavily_blogs(session: aiohttp.ClientSession, query: str, max_results: int = 5) -> List[Dict[str, str]]:
+    if not settings.TAVILY_API_KEY:
         return []
-    url = "https://www.googleapis.com/customsearch/v1"
-    params = {
-        "key": GOOGLE_API_KEY,
-        "cx": GOOGLE_CSE_ID,
-        "q": f"{query} site:blog.naver.com OR site:tistory.com OR site:medium.com OR site:blogspot.com",
-        "num": max_results,
+    url = "https://api.tavily.com/search"
+    headers = {"Authorization": f"Bearer {settings.TAVILY_API_KEY}"}
+    payload = {
+        "query": query,
+        "max_results": max_results,
+        "search_depth": "basic",
+        "include_domains": ["blog.naver.com", "tistory.com", "medium.com", "blogspot.com"],
     }
 
-    async with session.get(url, params=params, timeout=8) as res:
-        data = await res.json()
-        results = []
-        for it in data.get("items", []):
-            results.append({
-                "title": strip_tags(it.get("title", "")),
-                "description": strip_tags(it.get("snippet", "")),
-                "link": it.get("link", ""),
-                "source": brand_from_link(it.get("link", "")),
-            })
-        return results
+    try:
+        async with session.post(url, headers=headers, json=payload, timeout=8) as res:
+            if res.status != 200:
+                return []
+            data = await res.json()
+            results = []
+            for it in data.get("results", []):
+                link = it.get("url", "")
+                results.append({
+                    "title": strip_tags(it.get("title", "")),
+                    "description": strip_tags(it.get("content", "")),
+                    "link": link,
+                    "source": brand_from_link(link),
+                })
+            return results
+    except Exception as e:
+        print(f"⚠️ Tavily 블로그 검색 실패: {e}")
+        return []
 
 
 # ─────────────────────────────
@@ -128,11 +134,11 @@ async def run(plan) -> AsyncGenerator[ToolChunk, None]:
     yield ToolChunk(type="status", payload=f"📝 '{query}' 관련 블로그 탐색 중...")
 
     async with aiohttp.ClientSession() as session:
-        google_task = asyncio.create_task(get_google_blogs(session, query))
+        tavily_task = asyncio.create_task(get_tavily_blogs(session, query))
         naver_task = asyncio.create_task(get_naver_blogs(session, query))
-        google, naver = await asyncio.gather(google_task, naver_task)
+        tavily, naver = await asyncio.gather(tavily_task, naver_task)
 
-    items = unique_preserve_order(naver + google)
+    items = unique_preserve_order(naver + tavily)
     if not items:
         yield ToolChunk(type="error", payload="❌ 관련 블로그 글을 찾지 못했습니다.")
         return
