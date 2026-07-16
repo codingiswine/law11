@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.2.1-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.3.0-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -654,6 +654,35 @@ pattern = r'(?:\[([^\]]{2,30}?)\]|\*\*([^\*\n]{2,30}?)\*\*)\s*제(\d+(?:의\d+)?
 ```
 
 **영향**: GPT가 어떤 포맷으로 답하든 답변 본문에 등장하는 법령/조문이 출처 배지로 정확히 노출됩니다. 라이브 검증: 동일한 두 법령 비교 질문 재현 후 `산업안전보건법 제26조`, `중대재해처벌법 제4조` 배지가 정상적으로 표시됨을 확인. 회귀 테스트 2개 추가.
+
+---
+
+### 17. /api/ask-multi(Self-RAG)의 메트릭이 항상 duration≈0·agent="unknown"으로 기록되고, DB 저장 실패 경고도 조용히 버려짐 `v1.3.0`
+
+**문제**: 테스트 후보 순회 #4로 `/api/ask-multi`를 처음 라이브로 확인하다가 코드를 읽던 중 발견 — `StreamingResponse(event_stream(), ...)`를 생성해도 제너레이터는 즉시 실행되지 않는데(응답이 실제로 전송될 때 lazy하게 순회됨), 메트릭 기록(`duration`, `selected_agent`)은 `StreamingResponse` 생성 직후·`return` 이전에 있었습니다. 그 결과 실제 작업은 전혀 안 끝난 시점에 `duration`을 재고 있었고, `selected_agent`도 제너레이터 내부에서만 갱신되므로 항상 `"unknown"`으로 기록됐습니다 — 이 엔드포인트의 메트릭은 처음부터 한 번도 의미 있었던 적이 없었습니다. 추가로 DB 저장 실패 시 `type="warning"`을 보내는데, 오늘 이미 고친 것과 똑같은 원인(Literal/프론트 스위치문 모두 미지원)으로 조용히 버려지는 동일 버그가 이 엔드포인트에는 그대로 남아 있었고, `event_stream()` 안에 try/except가 전혀 없어 Multi-Agent 실행 중 예외가 나면 SSE 스트림이 그대로 처리되지 않은 예외로 끊기는 문제도 있었습니다.
+
+```python
+# 수정 전 — StreamingResponse 생성 직후(=제너레이터 실행 전)에 메트릭 기록
+response = StreamingResponse(event_stream(), media_type="text/event-stream")
+duration = time.time() - start_time
+metrics_collector.record_response_time("/ask-multi", selected_agent, duration)  # 항상 selected_agent="unknown"
+return response
+
+# 수정 후 — event_stream() 안, 실제 작업이 끝난 뒤에 기록 + try/except로 감쌈
+async def event_stream():
+    start_time = time.time()
+    selected_agent = "unknown"
+    try:
+        final_state = await run_multi_agent(...)
+        selected_agent = final_state.get("selected_tool", "unknown")
+        ...
+        metrics_collector.record_response_time("/ask-multi", selected_agent, time.time() - start_time)
+    except Exception as e:
+        metrics_collector.record_error("/ask-multi", type(e).__name__)
+        yield f"data: {ToolChunk(type='error', payload=f'❌ Multi-Agent 처리 중 오류: {e}').to_json()}\n\n"
+```
+
+**영향**: 라이브 검증: `/api/metrics`에서 `agent_type="law_rag_tool"` (기존엔 항상 "unknown")과 실제 처리 시간을 반영한 duration(~24초, 10-30초 버킷)을 확인. DB 저장 실패 경고는 `error` 타입으로 통일해 프론트에서 기존 렌더링 경로로 표시되도록 함.
 
 ---
 
