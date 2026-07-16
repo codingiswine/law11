@@ -79,13 +79,3 @@ qdrant_client = AsyncQdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=60
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-
-# ─────────────────────────────
-# ⚖️ 법제처 DRF API
-# ─────────────────────────────
-LAW_OC_ID = os.getenv("LAW_OC_ID", "drsgh1")
-
-# ─────────────────────────────
-# ⚙️ 기타 설정
-# ─────────────────────────────
-ENABLE_LAW_FALLBACK = os.getenv("ENABLE_LAW_FALLBACK", "true").lower() == "true"

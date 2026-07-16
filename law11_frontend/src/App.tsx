@@ -3,7 +3,7 @@ import Sidebar from "./components/Sidebar";
 import SearchBar from "./components/SearchBar";
 import ChatWindow from "./components/ChatWindow";
 import LawSidePanel from "./components/LawSidePanel";
-import { ApiService } from "./services/api";
+import { getSession, submitFeedback } from "./services/api";
 import type { Message, LawReference, LawSource } from "./types";
 
 function App() {
@@ -27,7 +27,7 @@ function App() {
   };
 
   const handleLoadSession = useCallback(async (sid: string) => {
-    const loaded = await ApiService.getSession(sid);
+    const loaded = await getSession(sid);
     if (loaded.length > 0) {
       setMessages(loaded);
       setSessionId(sid);
@@ -56,7 +56,7 @@ function App() {
     setMessages(prev =>
       prev.map(msg => msg.messageId === messageId ? { ...msg, feedback: value } : msg)
     );
-    await ApiService.submitFeedback(messageId, value);
+    await submitFeedback(messageId, value);
   }, []);
 
   const handleStreamError = useCallback((message: string) => {

@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.0.1-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.0.2-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -557,6 +557,20 @@ yield f"data: {ToolChunk(type='error', payload='⚠️ 대화 저장 실패 (DB 
 ```
 
 **영향**: DB 저장 실패 시 사용자에게 실제로 경고가 표시됩니다(기존 에러 렌더링 경로 재사용, 프론트엔드 변경 불필요). `core/stream.py`의 `Literal`에도 실제 사용 중인 `"meta"`를 추가해 문서화된 계약과 일치시킴.
+
+---
+
+### 13. Dead code 정리 (repo 전체 감사) `v1.0.2`
+
+**문제**: 리포지토리 전체를 감사해 사용되지 않는 필드/모델/설정과 중복 코드를 정리했습니다. 버그는 아니지만 방치하면 다음 수정 때 "이거 왜 있지?"로 시간을 잡아먹는 항목들입니다.
+
+- `ToolPlan.handler` 필드 — 어디서도 읽지 않음. 제거.
+- `AskResponse`/`Source` Pydantic 모델(`app/api/models.py`) — 라우트가 실제로는 dict/StreamingResponse를 반환해 한 번도 쓰인 적 없음. 제거.
+- `ENABLE_LAW_FALLBACK`, `settings.LAW_OC_ID` — 전자는 어디서도 참조 안 됨, 후자는 `law_updater_async.py`가 `settings`를 거치지 않고 자체 `os.getenv`로 따로 들고 있어 실질적으로 죽은 값. 둘 다 제거.
+- `strip_tags`/`unique_preserve_order` 함수가 `news_tool.py`/`blog_tool.py`에 토씨 하나 안 틀리고 중복 구현되어 있던 것을 `app/tools/_web_utils.py`로 추출해 공유 (단, `brand_from_link`는 두 파일에서 로직이 실제로 달라 중복이 아니므로 그대로 둠).
+- 프론트엔드 `ApiService` — 인스턴스 상태 없이 static 메서드만 담은 클래스였던 것을 `services/api.ts`의 일반 export 함수들로 전환 (클래스를 네임스페이스로만 쓰는 건 불필요한 래퍼).
+
+**영향**: 코드량 감소, 향후 유지보수 시 "이 필드/함수가 실제로 쓰이는지" 확인하는 비용 제거. 동작 변화 없음 — pytest 50개, 프론트 `tsc` 통과, `/api/ask`로 뉴스·블로그 tool 라이브 재검증 완료.
 
 ---
 
