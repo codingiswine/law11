@@ -437,68 +437,73 @@ async def ask_law11_multi_agent(request: QueryRequest):
     user_id = "law11_user"
     logger.info(f"🤖 [Multi-Agent] 요청 수신: {request.question}")
 
-    # 메트릭 추적 시작
-    start_time = time.time()
-    selected_agent = "unknown"
-
     try:
         full_answer_parts: List[str] = []
 
         async def event_stream():
-            nonlocal selected_agent
-            """Multi-Agent 실행 및 스트리밍"""
+            """Multi-Agent 실행 및 스트리밍.
 
-            # Multi-Agent 실행
-            final_state = await run_multi_agent(user_id, request.question)
-
-            # 답변을 chunk로 나눠서 스트리밍
-            answer = final_state.get("final_answer", "")
-
-            # Agent 정보 전송
-            selected_tool = final_state.get("selected_tool", "unknown")
-            selected_agent = selected_tool
-
-            # Agent 사용 메트릭 기록
-            metrics_collector.record_agent_usage(selected_agent)
-
-            status_msg = f"🤖 [{selected_tool}] 처리 완료"
-            yield f"data: {json.dumps({'event': 'status', 'payload': status_msg})}\n\n"
-
-            # 답변을 chunk로 나눠서 전송 (20자씩)
-            chunk_size = 20
-            for i in range(0, len(answer), chunk_size):
-                chunk_text = answer[i:i+chunk_size]
-                full_answer_parts.append(chunk_text)
-                yield f"data: {json.dumps({'event': 'text', 'payload': chunk_text})}\n\n"
-                await asyncio.sleep(0.01)  # 자연스러운 스트리밍
-
-            # DB 저장
-            full_answer = "".join(full_answer_parts)
-            tool_name = final_state.get("selected_tool", "").split("_")[0]
-
+            ⚠️ StreamingResponse(event_stream(), ...)는 이 제너레이터를 즉시
+            실행하지 않는다 (실제 응답 전송 시점에 lazy하게 순회됨) — 그래서
+            메트릭(duration, selected_agent)은 반드시 여기 안에서, 실제 작업이
+            끝난 뒤에 기록해야 한다. 바깥(StreamingResponse 생성 직후)에서
+            기록하면 duration은 항상 ~0초, selected_agent는 항상 "unknown"으로
+            찍힌다 (실측 확인).
+            """
+            start_time = time.time()
+            selected_agent = "unknown"
             try:
-                await save_chat_history(user_id, request.question, full_answer, tool_name)
-                yield f"data: {json.dumps({'event': 'status', 'payload': '✅ Multi-Agent 처리 완료'})}\n\n"
+                # Multi-Agent 실행
+                final_state = await run_multi_agent(user_id, request.question)
+
+                # 답변을 chunk로 나눠서 스트리밍
+                answer = final_state.get("final_answer", "")
+
+                # Agent 정보 전송
+                selected_tool = final_state.get("selected_tool", "unknown")
+                selected_agent = selected_tool
+
+                # Agent 사용 메트릭 기록
+                metrics_collector.record_agent_usage(selected_agent)
+
+                status_msg = f"🤖 [{selected_tool}] 처리 완료"
+                yield f"data: {json.dumps({'event': 'status', 'payload': status_msg})}\n\n"
+
+                # 답변을 chunk로 나눠서 전송 (20자씩)
+                chunk_size = 20
+                for i in range(0, len(answer), chunk_size):
+                    chunk_text = answer[i:i+chunk_size]
+                    full_answer_parts.append(chunk_text)
+                    yield f"data: {json.dumps({'event': 'text', 'payload': chunk_text})}\n\n"
+                    await asyncio.sleep(0.01)  # 자연스러운 스트리밍
+
+                # DB 저장
+                full_answer = "".join(full_answer_parts)
+                tool_name = final_state.get("selected_tool", "").split("_")[0]
+
+                try:
+                    await save_chat_history(user_id, request.question, full_answer, tool_name)
+                    yield f"data: {json.dumps({'event': 'status', 'payload': '✅ Multi-Agent 처리 완료'})}\n\n"
+                except Exception as e:
+                    logger.error(f"⚠️ [DB 저장 실패] {e}")
+                    # ⚠️ type="warning"은 Literal에도 없고 프론트엔드 스위치문에도
+                    # case가 없어 조용히 버려진다 (오늘 이미 확인한 버그와 동일
+                    # 원인) — 이미 처리되는 "error"를 재사용.
+                    yield f"data: {ToolChunk(type='error', payload='⚠️ DB 저장 실패').to_json()}\n\n"
+
+                metrics_collector.record_response_time("/ask-multi", selected_agent, time.time() - start_time)
+                metrics_collector.record_request("/ask-multi", selected_agent, "success")
+
             except Exception as e:
-                logger.error(f"⚠️ [DB 저장 실패] {e}")
-                yield f"data: {json.dumps({'event': 'warning', 'payload': '⚠️ DB 저장 실패'})}\n\n"
+                metrics_collector.record_response_time("/ask-multi", selected_agent, time.time() - start_time)
+                metrics_collector.record_error("/ask-multi", type(e).__name__)
+                metrics_collector.record_request("/ask-multi", selected_agent, "error")
+                logger.error(f"❌ [Multi-Agent 에러] {e}", exc_info=True)
+                yield f"data: {ToolChunk(type='error', payload=f'❌ Multi-Agent 처리 중 오류: {str(e)}').to_json()}\n\n"
 
-        response = StreamingResponse(event_stream(), media_type="text/event-stream")
-
-        # 응답 완료 후 메트릭 기록
-        duration = time.time() - start_time
-        metrics_collector.record_response_time("/ask-multi", selected_agent, duration)
-        metrics_collector.record_request("/ask-multi", selected_agent, "success")
-
-        return response
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     except Exception as e:
-        # 에러 메트릭 기록
-        duration = time.time() - start_time
-        metrics_collector.record_response_time("/ask-multi", selected_agent, duration)
-        metrics_collector.record_error("/ask-multi", type(e).__name__)
-        metrics_collector.record_request("/ask-multi", selected_agent, "error")
-
         logger.error(f"❌ [Multi-Agent 에러] {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
