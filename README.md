@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.0.2-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.1.0-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -571,6 +571,41 @@ yield f"data: {ToolChunk(type='error', payload='⚠️ 대화 저장 실패 (DB 
 - 프론트엔드 `ApiService` — 인스턴스 상태 없이 static 메서드만 담은 클래스였던 것을 `services/api.ts`의 일반 export 함수들로 전환 (클래스를 네임스페이스로만 쓰는 건 불필요한 래퍼).
 
 **영향**: 코드량 감소, 향후 유지보수 시 "이 필드/함수가 실제로 쓰이는지" 확인하는 비용 제거. 동작 변화 없음 — pytest 50개, 프론트 `tsc` 통과, `/api/ask`로 뉴스·블로그 tool 라이브 재검증 완료.
+
+---
+
+### 14. news_tool/blog_tool의 Google 검색 경로를 Tavily로 교체 `v1.1.0`
+
+**문제**: `news_tool.py`의 `get_google_news`는 공식 API가 아니라 `google.com/search?tbm=nws`를 직접 정규식으로 파싱하는 스크레이핑이었습니다 — API 키 없이 항상 실행되며, Google의 ToS를 위반하고, Google이 HTML 구조(`BNeawe vvjwJb` 등 CSS 클래스명)를 바꾸는 순간 아무 예고 없이 깨질 수 있는 상태였습니다. `blog_tool.py`의 `get_google_blogs`는 공식 Custom Search API를 썼지만 `GOOGLE_API_KEY`/`GOOGLE_CSE_ID`가 `.env`에 설정되어 있지 않아 이미 조용히 빈 결과([])만 반환하고 있었습니다 — 2027년 종료를 걱정할 필요도 없이 이미 죽어 있던 경로였습니다.
+
+```python
+# 수정 전 (news_tool.py) — Google 검색 결과 페이지를 직접 스크레이핑
+async def get_google_news(session, query, max_results=5):
+    async with session.get("https://www.google.com/search", params={"q": query, "tbm": "nws", ...}) as res:
+        res_text = await res.text()
+    blocks = re.findall(r'<a href="/url\?q=(.*?)&amp.*?<div[^>]*class="BNeawe vvjwJb...', res_text, re.S)
+    ...
+
+# 수정 후 — Tavily topic="news"
+async def get_tavily_news(session, query, max_results=5):
+    payload = {"query": query, "max_results": max_results, "search_depth": "basic", "topic": "news"}
+    async with session.post("https://api.tavily.com/search", headers=headers, json=payload) as res:
+        ...
+```
+
+```python
+# 수정 전 (blog_tool.py) — 공식 API지만 키가 없어 사실상 no-op
+if not GOOGLE_API_KEY or not GOOGLE_CSE_ID:
+    return []
+
+# 수정 후 — include_domains로 블로그 플랫폼만 필터링
+payload = {
+    "query": query, "max_results": max_results, "search_depth": "basic",
+    "include_domains": ["blog.naver.com", "tistory.com", "medium.com", "blogspot.com"],
+}
+```
+
+**영향**: `news_tool`은 ToS 위반·마크업 변경에 취약한 스크레이핑에서 벗어나고, `blog_tool`은 그동안 조용히 비어 있던 Google 쪽 결과가 실제로 채워지기 시작합니다. 라이브 검증: 뉴스·블로그 질문 모두 정상적으로 Tavily 결과가 소스에 포함됨을 확인.
 
 ---
 
