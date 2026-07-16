@@ -193,7 +193,7 @@ async def ask_law11(request: QueryRequest):
                 yield f"data: {ToolChunk(type='status', payload='✅ 대화 저장 완료').to_json()}\n\n"
             except Exception as e:
                 logger.error(f"⚠️ [DB 저장 중 오류] {e}")
-                yield f"data: {ToolChunk(type='warning', payload='⚠️ 대화 저장 실패 (DB 연결 문제)').to_json()}\n\n"
+                yield f"data: {ToolChunk(type='error', payload='⚠️ 대화 저장 실패 (DB 연결 문제)').to_json()}\n\n"
 
         # ✅ 스트리밍 반환
         return StreamingResponse(event_stream(), media_type="text/event-stream")

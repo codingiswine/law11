@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.0.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.0.1-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -470,6 +470,93 @@ if results and results[0].score >= 0.45 and not unknown_law_hint:
 ```
 
 **영향**: DB에 없는 법을 물었을 때 다른 법의 조문을 사칭해 답변하는 사례가 사라지고, 대신 일관되게 웹 검색(Tavily)으로 실제 조문을 찾아 정확히 인용합니다. 회귀 테스트 3개 추가.
+
+---
+
+### 8. 세션 히스토리가 라우터 키워드 매칭에 섞여 후속 질문 오분류 `v1.0.1`
+
+**문제**: `detect_tool()`이 fast-path 키워드 검사용 `normalized_q`를 만들 때 이전 대화 이력(history)과 현재 질문을 합쳐서 정규화했습니다. 그 결과 이전 턴에 법령 관련 답변(예: "기준"/"법적 근거" 포함)이 있으면, 이후 어떤 메시지를 보내도 `_LAW_KEYWORDS`에 먼저 매치되어 잘못 라우팅됐습니다. 실측: 비계 안전 기준을 물은 다음 "계단 관련 사고 뉴스 찾아봐"(명백한 뉴스 요청)가 이전 턴 때문에 `law_rag_tool`로 라우팅되어 무관한 법령 답변이 나왔습니다.
+
+```python
+# 수정 전 — history + 현재 질문을 합쳐서 정규화
+full_query   = f"{history}\n{text}".strip().lower()
+normalized_q = unicodedata.normalize("NFC", full_query.replace(" ", ""))
+
+# 수정 후 — 반드시 "현재 질문"만으로 정규화. history는 LLM 분류와
+# tool 실행 컨텍스트(ToolPlan.args["context"])에서만 별도로 사용
+normalized_q = unicodedata.normalize("NFC", text.lower().replace(" ", ""))
+```
+
+**영향**: 이전 턴의 주제와 무관하게 현재 질문 자체의 키워드로만 라우팅됩니다. 회귀 테스트 추가, 동일 2턴 대화 재현으로 라이브 검증 완료.
+
+---
+
+### 9. websearch_tool이 대화 context를 무시해 후속 질문에 엉뚱하게 답변 `v1.0.1`
+
+**문제**: 컨텍스트가 필요한 후속 질문("비계 설치 안전 기준 알려줘" → "그거 안 지키면 처벌은 어떻게 돼?")이 LLM 라우팅 + 낮은 벡터 관련도로 `websearch_tool`에 떨어지는 경우, 이 tool의 `summarize_web()`이 `plan.args["context"]`를 전혀 받지 않아 "그거"가 뭘 가리키는지 모른 채 완전히 무관한 뉴스(레딧 판타지풋볼 링크 포함)를 답으로 냈습니다.
+
+```python
+# 수정 전
+async def summarize_web(query: str, max_results: int = 8) -> Dict:
+    ...
+
+# 수정 후 — 요약 단계에서만 이전 대화를 참고 (검색 쿼리 자체는 현재 질문만 사용)
+async def summarize_web(query: str, max_results: int = 8, context: str = "") -> Dict:
+    ...
+    if context:
+        user_content = f"[이전 대화]\n{context}\n\n{user_content}"
+```
+
+**영향**: 지시어("그거"/"그건")가 포함된 후속 질문이 이전 대화를 참고해 올바른 주제로 답변됩니다. `law_rag_tool.py`의 웹 fallback 호출부 2곳도 동일하게 맞춤. 동일 시나리오 라이브 재현으로 검증.
+
+---
+
+### 10. "최근 거"가 "근거" 키워드와 오탐되어 후속 질문 오분류 `v1.0.1`
+
+**문제**: 뉴스 목록을 받은 뒤 "그 중에 제일 최근 거 자세히 알려줘"처럼 물으면, `normalized_q`가 공백을 제거하는 과정에서 "최근 거"가 "최근거"로 붙어 `_LAW_KEYWORDS`의 "근거"를 부분 문자열로 오탐 — 명백한 뉴스 후속 질문이 `law_rag_tool`로 잘못 라우팅됐습니다.
+
+```python
+# 수정 전
+_LAW_KEYWORDS = ["법적근거", "법령", "법조문", "조문", "근거", "기준", "조항", "법률", "시행령", "시행규칙"]
+
+# 수정 후 — "법적근거"가 이미 별도 키워드로 의도한 케이스를 커버하므로,
+# 오탐 위험이 큰 단독 "근거"만 제거
+_LAW_KEYWORDS = ["법적근거", "법령", "법조문", "조문", "기준", "조항", "법률", "시행령", "시행규칙"]
+```
+
+**영향**: 해당 문구는 이제 LLM 분류로 넘어가 정상적으로 `news_tool`로 분류됩니다. 회귀 테스트 추가, 4턴 대화 재현으로 라이브 검증.
+
+---
+
+### 11. ToolChunk.at 타임스탬프가 dataclass 정의 시점에 고정 `v1.0.1`
+
+**문제**: `at: float = time.time()`는 함수 기본 인자와 동일하게 클래스 정의 시점(모듈 최초 import 시점)에 단 한 번만 평가됩니다. 그 결과 앱이 떠 있는 동안 생성되는 모든 `ToolChunk`가 정확히 같은 타임스탬프를 갖습니다. 실측: 1.2초 간격으로 생성한 두 청크의 `at` 값이 동일함을 확인. 현재는 이 필드를 읽는 소비자가 없어 실제 증상은 없었지만, 지연시간 로깅 등에 쓰기 시작하는 순간 조용히 깨지는 잠재 버그였습니다.
+
+```python
+# 수정 전
+at: float = time.time()
+
+# 수정 후
+at: float = field(default_factory=time.time)
+```
+
+**영향**: `ToolChunk` 생성 시마다 실제 생성 시각이 기록됩니다.
+
+---
+
+### 12. DB 저장 실패 경고가 Literal 타입 불일치로 프론트엔드에서 무시됨 `v1.0.1`
+
+**문제**: `chat_history` 저장이 실패하면 백엔드가 `ToolChunk(type="warning", ...)`를 보내지만, `ToolChunk.type`의 `Literal["status", "text", "source", "error"]`에는 `"warning"`이 없고, 프론트엔드 `ChatWindow.tsx`의 스트림 스위치문에도 `case "warning"`이 없어 `default: break`로 조용히 버려졌습니다 — 대화가 저장되지 않아도 사용자는 전혀 알 수 없었습니다.
+
+```python
+# 수정 전
+yield f"data: {ToolChunk(type='warning', payload='⚠️ 대화 저장 실패 (DB 연결 문제)').to_json()}\n\n"
+
+# 수정 후 — 이미 Literal에 있고 프론트에서도 처리되는 'error' 타입 재사용
+yield f"data: {ToolChunk(type='error', payload='⚠️ 대화 저장 실패 (DB 연결 문제)').to_json()}\n\n"
+```
+
+**영향**: DB 저장 실패 시 사용자에게 실제로 경고가 표시됩니다(기존 에러 렌더링 경로 재사용, 프론트엔드 변경 불필요). `core/stream.py`의 `Literal`에도 실제 사용 중인 `"meta"`를 추가해 문서화된 계약과 일치시킴.
 
 ---
 
