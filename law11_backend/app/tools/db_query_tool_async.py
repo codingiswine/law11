@@ -38,6 +38,27 @@ def _extract_search_term(query: str) -> str:
     return term.strip()
 
 
+_RECENT_HISTORY_SQL = text("""
+    SELECT u.content AS question, a.content AS answer, u.created_at
+    FROM chat_history u
+    JOIN chat_history a
+      ON a.session_id = u.session_id AND a.turn_index = u.turn_index + 1 AND a.role = 'assistant'
+    WHERE u.role = 'user'
+    ORDER BY u.created_at DESC
+    LIMIT 5
+""")
+
+_KEYWORD_SEARCH_SQL = text("""
+    SELECT u.content AS question, a.content AS answer, u.created_at
+    FROM chat_history u
+    JOIN chat_history a
+      ON a.session_id = u.session_id AND a.turn_index = u.turn_index + 1 AND a.role = 'assistant'
+    WHERE u.role = 'user' AND u.content ILIKE :kw
+    ORDER BY u.created_at DESC
+    LIMIT 5
+""")
+
+
 async def run_db_query_tool(query: str) -> List[Dict]:
     """PostgreSQL chat_history에서 이전 대화 기록 검색 (비동기).
 
@@ -45,23 +66,25 @@ async def run_db_query_tool(query: str) -> List[Dict]:
     같은 session_id 내에서 turn_index, turn_index+1로 짝을 이룬다 (routes.py의
     save_chat_history 참고) — user_query/assistant_answer라는 별도 컬럼이나
     law_test 테이블은 존재하지 않는다.
+
+    ⚠️ "다시 말해줘"/"그거 뭐였지" 같은 자연어 재확인 요청은 _extract_search_term이
+    아무리 트리거/요청동사를 늘려도 다 못 걸러낸다 (실측: "그거가 정확히
+    뭐였는지 다시 말해줘"는 "말해줘"가 목록에 없어 문장 전체가 그대로 남아
+    과거 메시지와 매치될 수 없었음). 특정 문구를 계속 추가하는 대신, 키워드
+    검색이 실제로 0건이면 최근 대화를 그대로 보여주는 폴백으로 일반화한다.
     """
     search_term = _extract_search_term(query)
-    sql = text("""
-        SELECT u.content AS question, a.content AS answer, u.created_at
-        FROM chat_history u
-        JOIN chat_history a
-          ON a.session_id = u.session_id AND a.turn_index = u.turn_index + 1 AND a.role = 'assistant'
-        WHERE u.role = 'user' AND u.content ILIKE :kw
-        ORDER BY u.created_at DESC
-        LIMIT 5
-    """)
 
     try:
         async with settings.async_engine.connect() as conn:
-            rows = await conn.execute(sql, {"kw": f"%{search_term}%"})
-            results = rows.fetchall()
-            return [dict(r._mapping) for r in results]
+            if search_term:
+                rows = await conn.execute(_KEYWORD_SEARCH_SQL, {"kw": f"%{search_term}%"})
+                results = rows.fetchall()
+                if results:
+                    return [dict(r._mapping) for r in results]
+
+            rows = await conn.execute(_RECENT_HISTORY_SQL)
+            return [dict(r._mapping) for r in rows.fetchall()]
     except Exception as e:
         print(f"❌ [DB] 쿼리 실행 실패: {e}")
         return []
