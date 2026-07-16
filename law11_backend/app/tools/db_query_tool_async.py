@@ -11,6 +11,7 @@ import asyncio
 from sqlalchemy import text
 from typing import List, Dict, AsyncGenerator
 from core.stream import ToolChunk
+from app.services.question_router import _DB_KEYWORDS
 try:
     from app.config import settings   # ✅ Docker 실행 시
 except ModuleNotFoundError:
@@ -19,58 +20,50 @@ except ModuleNotFoundError:
 
 
 # --------------------------
-# DB 직접 조회 (law_test / chat_history)
+# DB 직접 조회 (chat_history — 이전 대화 기록)
 # --------------------------
+# ⚠️ 라우터 트리거("기록에서" 등)만 지우면 "확인해줘" 같은 요청동사가 남아
+# 여전히 전체 문자열 매치에 실패한다 (실측: "비계 기록에서 확인해줘" →
+# "확인해줘"가 붙은 채로 남아 "비계 설치 안전 기준 알려줘"와 매치 안 됨).
+# 검색 의도가 없는 흔한 요청동사도 함께 제거해야 실제 주제어만 남는다.
+_REQUEST_VERBS = ["확인해줘", "확인해주세요", "알려줘", "알려주세요", "찾아줘", "찾아주세요", "보여줘", "보여주세요"]
+
+
+def _extract_search_term(query: str) -> str:
+    """라우터 트리거 문구("기록에서"/"db에서" 등)와 흔한 요청동사를 질문에서
+    제거하고 남은 부분을 검색어로 쓴다."""
+    term = query
+    for kw in _DB_KEYWORDS + _REQUEST_VERBS:
+        term = term.replace(kw, "")
+    return term.strip()
+
+
 async def run_db_query_tool(query: str) -> List[Dict]:
-    """PostgreSQL에서 직접 질의 실행 (비동기)"""
-    q = query.lower()
-    if any(k in q for k in ["법", "조문", "시행령", "규칙"]):
-        sql = text("""
-            SELECT law_name, article_number, article_title, text
-            FROM law_test
-            WHERE text ILIKE :kw OR law_name ILIKE :kw
-            LIMIT 5
-        """)
-    else:
-        sql = text("""
-            SELECT user_query, assistant_answer, created_at
-            FROM chat_history
-            WHERE user_query ILIKE :kw
-            ORDER BY created_at DESC
-            LIMIT 5
-        """)
+    """PostgreSQL chat_history에서 이전 대화 기록 검색 (비동기).
+
+    chat_history는 user/assistant 메시지를 별도 행(role, content)으로 저장하고
+    같은 session_id 내에서 turn_index, turn_index+1로 짝을 이룬다 (routes.py의
+    save_chat_history 참고) — user_query/assistant_answer라는 별도 컬럼이나
+    law_test 테이블은 존재하지 않는다.
+    """
+    search_term = _extract_search_term(query)
+    sql = text("""
+        SELECT u.content AS question, a.content AS answer, u.created_at
+        FROM chat_history u
+        JOIN chat_history a
+          ON a.session_id = u.session_id AND a.turn_index = u.turn_index + 1 AND a.role = 'assistant'
+        WHERE u.role = 'user' AND u.content ILIKE :kw
+        ORDER BY u.created_at DESC
+        LIMIT 5
+    """)
 
     try:
         async with settings.async_engine.connect() as conn:
-            rows = await conn.execute(sql, {"kw": f"%{query}%"})
+            rows = await conn.execute(sql, {"kw": f"%{search_term}%"})
             results = rows.fetchall()
             return [dict(r._mapping) for r in results]
     except Exception as e:
         print(f"❌ [DB] 쿼리 실행 실패: {e}")
-        return []
-
-
-# --------------------------
-# Memory: 최근 대화 불러오기
-# --------------------------
-async def get_recent_history(user_id: str, limit: int = 10) -> List[Dict]:
-    """최근 대화 기록 불러오기 (Memory)"""
-    sql = text("""
-        SELECT user_query, assistant_answer
-        FROM chat_history
-        WHERE user_id = :user_id
-        ORDER BY created_at DESC
-        LIMIT :limit
-    """)
-    try:
-        async with settings.async_engine.connect() as conn:
-            rows = await conn.execute(sql, {"user_id": user_id, "limit": limit})
-            results = rows.fetchall()
-            return list(reversed([
-                {"question": r[0], "answer": r[1]} for r in results
-            ]))
-    except Exception as e:
-        print(f"⚠️ [Memory] 대화 불러오기 실패: {e}")
         return []
 
 
