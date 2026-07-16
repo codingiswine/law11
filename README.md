@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.1.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.2.0-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -606,6 +606,38 @@ payload = {
 ```
 
 **영향**: `news_tool`은 ToS 위반·마크업 변경에 취약한 스크레이핑에서 벗어나고, `blog_tool`은 그동안 조용히 비어 있던 Google 쪽 결과가 실제로 채워지기 시작합니다. 라이브 검증: 뉴스·블로그 질문 모두 정상적으로 Tavily 결과가 소스에 포함됨을 확인.
+
+---
+
+### 15. db_query_tool_async가 존재하지 않는 테이블/컬럼을 조회해 항상 실패 `v1.2.0`
+
+**문제**: "이전 기록에서 확인해줘" 같은 질문을 라이브로 테스트하다 발견 — `db_query_tool_async.py`가 `law_test`라는 존재하지 않는 테이블과, `chat_history`의 `user_query`/`assistant_answer`라는 존재하지 않는 컬럼(실제로는 `role`/`content`를 행 단위로 저장)을 조회하고 있었습니다. 매 호출마다 `UndefinedColumnError`가 발생했지만 넓은 `except Exception`에 잡혀 조용히 `[]`를 반환 — 이 tool은 사실상 한 번도 정상 동작한 적이 없었고, 사용자는 항상 "❌ DB에서 결과를 찾을 수 없습니다"만 받았습니다.
+
+스키마를 고친 뒤 다시 라이브 테스트하니 **두 번째 버그**가 드러났습니다: 현재 질문 문장 전체("비계 기록에서 확인해줘")를 그대로 `ILIKE` 패턴으로 써서, 과거 메시지가 지금 질문과 토씨 하나 안 틀리고 똑같을 때만 매치되고 있었습니다.
+
+```python
+# 수정 전 — 존재하지 않는 테이블/컬럼 조회
+SELECT law_name, article_number, article_title, text FROM law_test ...
+SELECT user_query, assistant_answer, created_at FROM chat_history WHERE user_query ILIKE :kw ...
+
+# 수정 후 — 실제 스키마(role/content, session_id+turn_index 짝짓기)에 맞춤
+SELECT u.content AS question, a.content AS answer, u.created_at
+FROM chat_history u
+JOIN chat_history a ON a.session_id = u.session_id AND a.turn_index = u.turn_index + 1 AND a.role = 'assistant'
+WHERE u.role = 'user' AND u.content ILIKE :kw
+```
+
+```python
+# 검색어 추출 — 라우터 트리거("기록에서" 등)와 흔한 요청동사("확인해줘" 등)를
+# 제거해 실제 주제어만 ILIKE 패턴으로 사용
+def _extract_search_term(query: str) -> str:
+    term = query
+    for kw in _DB_KEYWORDS + _REQUEST_VERBS:
+        term = term.replace(kw, "")
+    return term.strip()
+```
+
+**영향**: `law_test` 참조 제거(존재한 적 없는 테이블, `law_rag_tool`과 역할도 중복), 이전 대화 기록 조회가 실제로 동작하기 시작합니다. 라이브 검증: "비계 설치 안전 기준" 질문 후 "비계 기록에서 확인해줘"로 물으면 실제 이전 턴을 찾아 반환함을 확인. 회귀 테스트 3개 추가.
 
 ---
 
