@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ApiService } from "../services/api";
+import { getHistory, deleteSession } from "../services/api";
 import type { SessionSummary } from "../types";
 
 interface SidebarProps {
@@ -13,11 +13,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentSessionId, onNewSession, onLoa
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
 
   useEffect(() => {
-    ApiService.getHistory().then(setSessions);
+    getHistory().then(setSessions);
   }, [currentSessionId, refreshKey]);
 
   const handleDelete = async (sessionId: string) => {
-    await ApiService.deleteSession(sessionId);
+    await deleteSession(sessionId);
     setSessions(prev => prev.filter(s => s.session_id !== sessionId));
     if (sessionId === currentSessionId) {
       onNewSession();

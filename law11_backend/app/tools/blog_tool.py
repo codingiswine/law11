@@ -10,11 +10,12 @@ blog_tool_v5.4_aiohttp (Law11 GPT-5 완전 비동기판)
 ────────────────────────────────────────────
 """
 
-import os, re, html, aiohttp, asyncio
+import os, aiohttp, asyncio
 from typing import List, Dict, AsyncGenerator
 from urllib.parse import urlparse
 from app.config import settings
 from core.stream import ToolChunk
+from app.tools._web_utils import strip_tags, unique_preserve_order
 
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
@@ -30,9 +31,6 @@ DEFAULT_UA = (
 # ─────────────────────────────
 # 🔧 유틸 함수
 # ─────────────────────────────
-def strip_tags(text: str) -> str:
-    return html.unescape(re.sub(r"<[^>]+>", "", text or "")).strip()
-
 def brand_from_link(link: str) -> str:
     try:
         host = urlparse(link).netloc.lower()
@@ -45,15 +43,6 @@ def brand_from_link(link: str) -> str:
         return parts[-1].upper() if parts else "BLOG"
     except:
         return "BLOG"
-
-def unique_preserve_order(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    seen, result = set(), []
-    for it in items:
-        title = it.get("title")
-        if title and title not in seen:
-            seen.add(title)
-            result.append(it)
-    return result
 
 
 # ─────────────────────────────

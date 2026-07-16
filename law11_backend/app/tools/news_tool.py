@@ -10,11 +10,12 @@ news_tool_v5.4_aiohttp (Law11 GPT-5 구조 완전 비동기판)
 ────────────────────────────────────────────
 """
 
-import os, re, html, datetime, asyncio, aiohttp
+import os, re, datetime, asyncio, aiohttp
 from typing import List, Dict, AsyncGenerator
 from urllib.parse import urlparse
 from app.config import settings
 from core.stream import ToolChunk
+from app.tools._web_utils import strip_tags, unique_preserve_order
 
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
@@ -28,9 +29,6 @@ DEFAULT_UA = (
 # ─────────────────────────────
 # 🔧 공통 유틸
 # ─────────────────────────────
-def strip_tags(text: str) -> str:
-    return html.unescape(re.sub(r"<[^>]+>", "", text or "")).strip()
-
 def brand_from_link(link: str) -> str:
     try:
         host = urlparse(link).netloc.lower()
@@ -42,15 +40,6 @@ def brand_from_link(link: str) -> str:
         return parts[-1].upper() if parts else "출처 미상"
     except:
         return "출처 미상"
-
-def unique_preserve_order(items: List[Dict[str, str]]) -> List[Dict[str, str]]:
-    seen, result = set(), []
-    for it in items:
-        title = it.get("title")
-        if title and title not in seen:
-            seen.add(title)
-            result.append(it)
-    return result
 
 
 # ─────────────────────────────

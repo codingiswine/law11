@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { ApiService } from "../services/api";
+import { getLawContent } from "../services/api";
 import type { LawArticle } from "../types";
 
 interface LawSidePanelProps {
@@ -25,13 +25,13 @@ const LawSidePanel: React.FC<LawSidePanelProps> = ({ lawName, articleNumber, onC
   useEffect(() => {
     setLoading(true);
     setError(null);
-    ApiService.getLawContent(lawName, articleNumber)
+    getLawContent(lawName, articleNumber)
       .then(data => setArticles(data.articles ?? []))
       .catch(async err => {
         if (err.message.includes("404") && articleNumber) {
           // 특정 조문 없음 → 법령 전체 상위 조문으로 재시도
           try {
-            const data = await ApiService.getLawContent(lawName, "");
+            const data = await getLawContent(lawName, "");
             setArticles(data.articles ?? []);
           } catch {
             setError("NOT_FOUND");
