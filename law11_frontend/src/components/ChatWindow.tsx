@@ -4,26 +4,30 @@ import type { Message, LawReference, LawSource } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
-// ✅ 웹 검색 폴백은 오래 걸리는데 마지막 상태 메시지가 그대로 멈춰 있어서
-// "멈췄나?" 하는 느낌을 줌 — 답변이 오기 전까지 재밌는 문구를 랜덤 순환 표시.
+// ✅ PG/Qdrant 검색이든 웹 폴백이든, 오래 걸리는 동안 마지막 상태 메시지가
+// 그대로 멈춰 있으면 "멈췄나?" 하는 느낌을 줌 — 상태 메시지가 뜨는 순간부터
+// 답변 텍스트가 오기 전까지 재밌는 문구를 랜덤 순환 표시. 국면에 안 맞는
+// 문구가 안 뜨도록 풀을 둘로 나눔 (예: PG/Qdrant 검색 중엔 "구글 본사" 안 뜸).
 const WEB_FALLBACK_TRIGGERS = ["Web 검색으로 보완", "Web fallback 실행"];
-const FUNNY_SEARCH_MESSAGES = [
+const GENERAL_SEARCH_MESSAGES = [
   "국가법령정보센터 서고 뒤엎는 중...",
-  "구글 본사 뒤지는 중...",
   "판례 몰래 훔쳐보는 중...",
   "변호사 없이 혼자 법전 넘기는 중...",
-  "인터넷 구석구석 탈탈 터는 중...",
   "관련 조문 붙잡고 심문하는 중...",
-  "검색엔진들 닦달하는 중...",
   "클로드 본사 뒤지는 중...",
   "GPT 본사 뒤지는 중...",
 ];
+const WEB_FALLBACK_MESSAGES = [
+  "구글 본사 뒤지는 중...",
+  "인터넷 구석구석 탈탈 터는 중...",
+  "검색엔진들 닦달하는 중...",
+];
 
-function pickNextFunnyMessage(excludeIndex: number): number {
-  if (FUNNY_SEARCH_MESSAGES.length <= 1) return 0;
-  let next = Math.floor(Math.random() * FUNNY_SEARCH_MESSAGES.length);
+function pickNextFunnyMessage(pool: string[], excludeIndex: number): number {
+  if (pool.length <= 1) return 0;
+  let next = Math.floor(Math.random() * pool.length);
   while (next === excludeIndex) {
-    next = Math.floor(Math.random() * FUNNY_SEARCH_MESSAGES.length);
+    next = Math.floor(Math.random() * pool.length);
   }
   return next;
 }
@@ -123,6 +127,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
     let funnyTimer: ReturnType<typeof setInterval> | null = null;
     let funnyIndex = -1;
+    let currentPool: string[] = GENERAL_SEARCH_MESSAGES;
 
     const stopFunnyRotation = () => {
       if (funnyTimer) {
@@ -134,11 +139,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
     const startFunnyRotation = () => {
       if (funnyTimer) return;
-      funnyIndex = pickNextFunnyMessage(funnyIndex);
-      setFunnyMessage(FUNNY_SEARCH_MESSAGES[funnyIndex]);
+      funnyIndex = pickNextFunnyMessage(currentPool, funnyIndex);
+      setFunnyMessage(currentPool[funnyIndex]);
       funnyTimer = setInterval(() => {
-        funnyIndex = pickNextFunnyMessage(funnyIndex);
-        setFunnyMessage(FUNNY_SEARCH_MESSAGES[funnyIndex]);
+        funnyIndex = pickNextFunnyMessage(currentPool, funnyIndex);
+        setFunnyMessage(currentPool[funnyIndex]);
       }, 2000);
     };
 
@@ -156,7 +161,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         ...prev,
         isError ? `❌ ${text}` : text,
       ]);
-      if (!isError && WEB_FALLBACK_TRIGGERS.some((trigger) => text.includes(trigger))) {
+      if (!isError) {
+        // ✅ 웹 폴백으로 넘어간 걸 감지하면 문구 풀을 웹 전용으로 교체
+        // (다음 tick부터 반영 — PG/Qdrant 단계에서 "구글 본사" 안 뜨게)
+        if (WEB_FALLBACK_TRIGGERS.some((trigger) => text.includes(trigger))) {
+          currentPool = WEB_FALLBACK_MESSAGES;
+          funnyIndex = -1;
+        }
         startFunnyRotation();
       }
     };
