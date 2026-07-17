@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.4.2-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.4.3-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -793,6 +793,16 @@ cd law11_backend && python -m eval.eval_multiturn
 **부수 변경**:
 - 게이트 제거로 MT-003의 원래 재현("그거 안 지키면 처벌은?")이 law_rag_tool로 가게 되어(답변 품질은 오히려 개선 — 처벌 질문에 법령 기반 답변) websearch context 경로를 안 지나게 됨 → MT-003을 "해외" fast-path 키워드("해외에서는 그거 어떻게 규제해?")로 조정해 websearch 라우팅을 고정하고, revert 검증으로 회귀 감지력 유지 확인.
 - `router_accuracy.json`을 git 추적으로 전환(.gitignore 예외) — 이번 재측정이 이전 상세 기록을 덮어써 케이스 단위 diff가 불가능했던 문제 재발 방지.
+
+---
+
+### 23. 라우터 eval의 "최신 개정" 라벨을 라우터 스펙에 맞게 정정 `v1.4.3`
+
+**문제**: #22에서 확인한 스펙 충돌 — "2025년에 바뀐 법 내용은?"의 골든 라벨은 `law`인데, 라우터 시스템 프롬프트는 "최신 개정 → websearch_tool"로 정의합니다. 라우터는 자기 정의대로 정확히 행동했는데 eval이 틀렸다고 채점하고 있었습니다.
+
+**수정**: websearch 쪽 정의로 통일 — DB는 주간 스케줄러 동기화라 최신 개정 반영이 늦을 수 있어, 최신 개정 질문은 웹 검색이 맞는 동작입니다. 라벨을 `non-law`로 정정.
+
+**결과**: 라우터 정확도 30/32 → **31/32 (96.9%)** (키워드/LLM 동일). 남은 오분류 1건("계단이 위험해 보여" → general)은 라벨 자체가 논쟁적인 경계 케이스로 보류.
 
 ---
 
