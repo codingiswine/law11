@@ -57,13 +57,17 @@ SCENARIOS = [
         "expect_any": ["비계"],
     },
     {
+        # 원래 재현("그거 안 지키면 처벌은?")은 관련도 게이트 제거(v1.4.2) 후
+        # law_rag_tool로 가게 되어 websearch context 경로를 안 지남. "해외"
+        # fast-path 키워드로 websearch_tool 라우팅을 고정해 같은 fix를 박제.
         "id": "MT-003",
         "bug": "(3634f51) websearch_tool이 후속 질문에서 context를 무시하고 엉뚱한 답",
         "turns": [
             "비계 설치 안전 기준 알려줘",
-            "그거 안 지키면 처벌은 어떻게 돼?",
+            "해외에서는 그거 어떻게 규제해?",
         ],
         "expect_any": ["비계"],
+        "expect_tool": "websearch",
     },
     {
         "id": "MT-004",

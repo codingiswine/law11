@@ -69,6 +69,8 @@ law11_backend/.cache/
 # 📊 EVAL RESULTS (베이스라인 기준점, 커밋 금지)
 # =========================================
 law11_backend/eval/results/*.json
+# 단, 라우터 정확도는 케이스 단위 diff를 위해 추적 (2026-07-18)
+!law11_backend/eval/results/router_accuracy.json
 
 # =========================================
 # 🛠️ INTERNAL DEV DOCS (Claude Code 워크플로우)

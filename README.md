@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.4.1-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.4.2-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -770,6 +770,29 @@ cd law11_backend && python -m eval.eval_multiturn
 **과정에서 발견한 eval 자기 오염 버그 (수정)**: MT-001 첫 revert 검증이 실패해야 하는데 통과했습니다. 원인은 `db_query_tool_async`의 키워드 검색이 세션 필터 없는 전역 검색(`WHERE u.role='user' AND u.content ILIKE :kw`)이라, 과거 eval 실행이 chat_history에 남긴 동일 질문 행("그거가 정확히 뭐였는지 다시 말해줘")이 그대로 매치된 것 — eval을 반복 실행할수록 자기 기록이 fixture를 오염시켜 "매치 불가능한 문장"이 매치 가능해지는 구조였습니다. `purge_eval_sessions()`를 추가해 실행 시작 시 `eval-mt-%` 세션을 제거하도록 수정했습니다.
 
 **관찰 (미수정)**: 위 전역 검색은 제품 관점에서도 세션/사용자 경계 없이 전체 대화 이력을 뒤진다는 뜻입니다. 현재는 `user_id`가 하드코딩된 단일 사용자 구조라 실해가 없지만, 멀티 유저로 확장하면 다른 사용자의 대화가 검색되는 격리 문제가 됩니다. 확장 시점에 `session_id` 또는 `user_id` 필터 추가 필요.
+
+---
+
+### 22. 라우터의 Qdrant 관련도 게이트 제거 — 진짜 법령 질문을 websearch로 강등시키던 문제 `v1.4.2`
+
+**문제**: 라우터 정확도 재측정(07-17)에서 발견 — LLM이 law_rag_tool로 맞게 분류한 "산재 은폐하면 어떻게 되나요?"가 Qdrant top-1 관련도 게이트(score < 0.45 → websearch 강등)에 걸려 웹 요약으로 빠졌습니다. 실측해 보니 이 점수는 질문의 법령 여부와 분리되지 않습니다:
+
+| 질문 | top-1 score | 실제 성격 |
+|---|---|---|
+| 산재 은폐하면 어떻게 되나요? | 0.410 | 진짜 법령 (산업안전보건법 제57조) — 강등됨 ❌ |
+| 수영장 안전성 평가는 어떻게 해? | 0.452 | DB 밖 — 통과됨 |
+| 한 층에 소화기 몇 개 있어야돼? | 0.332 | DB 밖 |
+| 오늘 날씨 어때? | 0.279 | 무관 |
+
+진짜 법령 질문(0.410)이 DB 밖 질문(0.452)보다 낮아 **어떤 threshold도 양쪽을 다 못 맞춥니다.**
+
+**수정**: 게이트(`_check_vector_relevance` + 캐시)를 제거하고 LLM 분류 결과를 그대로 신뢰합니다. law_rag_tool 내부가 이미 PG 정확 매칭 → Qdrant(자체 0.45/0.5 기준) → web fallback(조문 인용 포맷, context 전달) 체인으로 같은 결정을 더 많은 정보로 내리므로, 라우터 단계의 성긴 중복 판단을 걷어냈습니다.
+
+**검증**: pytest 53개 통과(게이트 전용 테스트 5개 제거, 위임 회귀 테스트로 교체) · 라우터 정확도 29/32 → 30/32(93.8%) 회복 · 멀티턴 eval 5/5. 남은 오분류 2건("계단이 위험해 보여", "2025년에 바뀐 법 내용은?")은 라벨 자체가 논쟁적이거나 라우터 시스템 프롬프트("최신 개정 → websearch")와 골든 라벨이 충돌하는 케이스로, 별도 판단 필요.
+
+**부수 변경**:
+- 게이트 제거로 MT-003의 원래 재현("그거 안 지키면 처벌은?")이 law_rag_tool로 가게 되어(답변 품질은 오히려 개선 — 처벌 질문에 법령 기반 답변) websearch context 경로를 안 지나게 됨 → MT-003을 "해외" fast-path 키워드("해외에서는 그거 어떻게 규제해?")로 조정해 websearch 라우팅을 고정하고, revert 검증으로 회귀 감지력 유지 확인.
+- `router_accuracy.json`을 git 추적으로 전환(.gitignore 예외) — 이번 재측정이 이전 상세 기록을 덮어써 케이스 단위 diff가 불가능했던 문제 재발 방지.
 
 ---
 
