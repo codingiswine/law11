@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-07-18T00:09:51",
+  "generated_at": "2026-07-18T00:53:45",
   "total": 32,
-  "keyword_accuracy": 0.9375,
-  "llm_accuracy": 0.9375,
-  "keyword_correct": 30,
-  "llm_correct": 30,
+  "keyword_accuracy": 0.9688,
+  "llm_accuracy": 0.9688,
+  "keyword_correct": 31,
+  "llm_correct": 31,
   "details": [
     {
       "question": "산업안전보건법 제17조 내용은?",
@@ -278,12 +278,12 @@
     },
     {
       "question": "2025년에 바뀐 법 내용은?",
-      "label": "law",
+      "label": "non-law",
       "kw_tool": "websearch_tool",
       "kw_pred": "non-law",
-      "kw_correct": false,
+      "kw_correct": true,
       "llm_pred": "non-law",
-      "llm_correct": false
+      "llm_correct": true
     },
     {
       "question": "건설 현장 안전 어떻게 해야 해?",

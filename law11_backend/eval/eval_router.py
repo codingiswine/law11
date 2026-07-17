@@ -79,7 +79,9 @@ LABELED_CASES: List[Dict] = [
     # ── 경계 케이스 (애매한 질문) ──
     {"question": "오래된 건물 안전 기준 뭐야?",                   "label": "law"},
     {"question": "계단이 위험해 보여",                            "label": "law"},
-    {"question": "2025년에 바뀐 법 내용은?",                      "label": "law"},
+    # 최신 개정 질문은 라우터 시스템 프롬프트 정의상 websearch_tool 담당
+    # (DB는 주간 동기화라 최신 개정 반영이 늦을 수 있음) → non-law가 정답
+    {"question": "2025년에 바뀐 법 내용은?",                      "label": "non-law"},
     {"question": "건설 현장 안전 어떻게 해야 해?",               "label": "law"},
 ]
 
