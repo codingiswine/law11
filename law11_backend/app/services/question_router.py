@@ -6,7 +6,6 @@ from core.logger import law11_logger as logger
 from sqlalchemy import text
 
 from app.config import settings
-from app.services.rag_service import get_embedding_async
 from core.plan import ToolPlan
 
 async_engine = settings.async_engine
@@ -26,7 +25,6 @@ _LLM_SYSTEM = """너는 Law11 법령 챗봇의 질문 라우터다.
 
 _llm_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 _llm_cache: Dict[str, str] = {}
-_vector_relevance_cache: Dict[str, float] = {}
 
 # ── Fast-path 키워드
 # ponytail: 단독 "근거"는 뺐다 — normalized_q가 공백을 제거하다 보니 "최근 거"가
@@ -57,21 +55,6 @@ _raw_laws = [
     "중대재해 처벌 등에 관한 법률", "중대재해 처벌 등에 관한 법률 시행령",
 ]
 _CORE_LAWS = [unicodedata.normalize("NFC", law.replace(" ", "")) for law in _raw_laws]
-
-
-async def _check_vector_relevance(query: str) -> float:
-    if query in _vector_relevance_cache:
-        return _vector_relevance_cache[query]
-    try:
-        vector = await get_embedding_async(query)
-        results = await settings.qdrant_client.search(
-            settings.QDRANT_COLLECTION_NAME, vector, limit=1, with_payload=False,
-        )
-        score = results[0].score if results else 0.0
-    except Exception:
-        score = 1.0
-    _vector_relevance_cache[query] = score
-    return score
 
 
 async def _load_session_context(session_id: str, limit: int = 5) -> str:
@@ -167,13 +150,12 @@ async def detect_tool(user_id: str, text: str, session_id: Optional[str] = None)
     tool = await _classify_with_llm(text, history)
     logger.info(f"🤖 [Router] LLM 결과 → {tool.upper()}")
 
-    if tool == "law_rag_tool":
-        score = await _check_vector_relevance(text)
-        if score < 0.45:
-            logger.info(f"🌐 [Router] Qdrant 관련도 낮음 ({score:.2f}) → WEBSEARCH_TOOL")
-            tool = "websearch_tool"
-        else:
-            logger.info(f"✅ [Router] Qdrant 관련도 확인 ({score:.2f}) → LAW_RAG_TOOL")
-
+    # ⚠️ LLM이 law_rag_tool을 고르면 그대로 보낸다. 예전에는 Qdrant top-1 score < 0.45
+    # 면 websearch_tool로 강등하는 게이트가 있었지만, 실측 결과 점수가 질문의 법령
+    # 여부와 분리되지 않았다 (진짜 법령 질문 "산재 은폐하면 어떻게 되나요?"=0.41 강등,
+    # DB 밖 질문 "수영장 안전성 평가는?"=0.452 통과 — 어떤 threshold도 양쪽을 다 못
+    # 맞춤). law_rag_tool 내부가 PG 정확 매칭 → Qdrant(자체 0.45/0.5 기준) → web
+    # fallback(조문 인용 포맷, context 전달) 체인으로 같은 결정을 더 많은 정보로
+    # 내리므로 거기에 위임한다.
     return _plan(tool)
 

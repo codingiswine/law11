@@ -1,0 +1,298 @@
+{
+  "generated_at": "2026-07-18T00:09:51",
+  "total": 32,
+  "keyword_accuracy": 0.9375,
+  "llm_accuracy": 0.9375,
+  "keyword_correct": 30,
+  "llm_correct": 30,
+  "details": [
+    {
+      "question": "산업안전보건법 제17조 내용은?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "산업안전보건기준에 관한 규칙 제52조 알려줘",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "중대재해처벌법 제6조 처벌 기준은?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "재난 및 안전관리 기본법 제3조는?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "산업안전보건법 시행령 제2조 뭐야?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "안전관리자 선임 기준은?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "비계 설치 안전 기준 알려줘",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "근로자 안전보건교육 의무 시간은 얼마야?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "위험성평가 어떻게 해야 해?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "중대재해 발생하면 경영책임자 처벌은?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "사업주 안전조치 의무가 뭐야?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "보건관리자 선임 의무 있어?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "안전보건관리책임자 역할이 뭐야?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "공장 계단 안전 기준은?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "화학물질 취급 규정은?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "안전조치 위반하면 벌금 얼마야?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "산재 은폐하면 어떻게 되나요?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "최근 산업재해 뉴스 알려줘",
+      "label": "non-law",
+      "kw_tool": "news_tool",
+      "kw_pred": "non-law",
+      "kw_correct": true,
+      "llm_pred": "non-law",
+      "llm_correct": true
+    },
+    {
+      "question": "오늘 안전 관련 기사 있어?",
+      "label": "non-law",
+      "kw_tool": "news_tool",
+      "kw_pred": "non-law",
+      "kw_correct": true,
+      "llm_pred": "non-law",
+      "llm_correct": true
+    },
+    {
+      "question": "최신 중대재해 보도 있나요?",
+      "label": "non-law",
+      "kw_tool": "news_tool",
+      "kw_pred": "non-law",
+      "kw_correct": true,
+      "llm_pred": "non-law",
+      "llm_correct": true
+    },
+    {
+      "question": "안전관리자 경험 블로그 있어?",
+      "label": "non-law",
+      "kw_tool": "blog_tool",
+      "kw_pred": "non-law",
+      "kw_correct": true,
+      "llm_pred": "non-law",
+      "llm_correct": true
+    },
+    {
+      "question": "산업안전 자격증 후기 알려줘",
+      "label": "non-law",
+      "kw_tool": "blog_tool",
+      "kw_pred": "non-law",
+      "kw_correct": true,
+      "llm_pred": "non-law",
+      "llm_correct": true
+    },
+    {
+      "question": "미국 OSHA 계단 규정은?",
+      "label": "non-law",
+      "kw_tool": "websearch_tool",
+      "kw_pred": "non-law",
+      "kw_correct": true,
+      "llm_pred": "non-law",
+      "llm_correct": true
+    },
+    {
+      "question": "일본 노동안전위생법 어떻게 돼?",
+      "label": "non-law",
+      "kw_tool": "websearch_tool",
+      "kw_pred": "non-law",
+      "kw_correct": true,
+      "llm_pred": "non-law",
+      "llm_correct": true
+    },
+    {
+      "question": "EU 산업안전 규정 알려줘",
+      "label": "non-law",
+      "kw_tool": "websearch_tool",
+      "kw_pred": "non-law",
+      "kw_correct": true,
+      "llm_pred": "non-law",
+      "llm_correct": true
+    },
+    {
+      "question": "오늘 너무 힘들어",
+      "label": "non-law",
+      "kw_tool": "general_tool",
+      "kw_pred": "non-law",
+      "kw_correct": true,
+      "llm_pred": "non-law",
+      "llm_correct": true
+    },
+    {
+      "question": "고마워 잘 설명해줬어",
+      "label": "non-law",
+      "kw_tool": "general_tool",
+      "kw_pred": "non-law",
+      "kw_correct": true,
+      "llm_pred": "non-law",
+      "llm_correct": true
+    },
+    {
+      "question": "안전이 중요하다고 생각해?",
+      "label": "non-law",
+      "kw_tool": "general_tool",
+      "kw_pred": "non-law",
+      "kw_correct": true,
+      "llm_pred": "non-law",
+      "llm_correct": true
+    },
+    {
+      "question": "오래된 건물 안전 기준 뭐야?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    },
+    {
+      "question": "계단이 위험해 보여",
+      "label": "law",
+      "kw_tool": "general_tool",
+      "kw_pred": "non-law",
+      "kw_correct": false,
+      "llm_pred": "non-law",
+      "llm_correct": false
+    },
+    {
+      "question": "2025년에 바뀐 법 내용은?",
+      "label": "law",
+      "kw_tool": "websearch_tool",
+      "kw_pred": "non-law",
+      "kw_correct": false,
+      "llm_pred": "non-law",
+      "llm_correct": false
+    },
+    {
+      "question": "건설 현장 안전 어떻게 해야 해?",
+      "label": "law",
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
+    }
+  ]
+}
