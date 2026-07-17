@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.4.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.4.1-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -750,6 +750,26 @@ return [dict(r._mapping) for r in rows.fetchall()]
 # 백엔드가 localhost:8000에 떠 있는 상태에서
 cd law11_backend && python -m eval.eval_multiturn
 ```
+
+---
+
+### 21. 멀티턴 eval 전 시나리오 mutation 검증 완료 + eval 자기 오염 버그 수정 `v1.4.1`
+
+**한 것**: #20에서 MT-002만 revert 검증했던 것을 나머지 4개 시나리오로 확장 — 각 시나리오가 박제한 fix를 하나씩 pre-fix 상태로 되돌리고 해당 시나리오가 실제로 실패하는지 확인했습니다.
+
+| 시나리오 | 되돌린 fix | 결과 |
+|---|---|---|
+| MT-001 | db_query 폴백 (#19) | ❌ "DB에서 결과를 찾을 수 없습니다" — 원래 버그 그대로 재현 |
+| MT-002 | general_tool context (#18) | ❌ (#20에서 검증) |
+| MT-003 | websearch context (#14) | ❌ "비계" 지시 대상을 잃고 일반 안전 뉴스로 퇴행 |
+| MT-004 | 단독 "근거" 키워드 제거 (#16) | ❌ `tool='law'` 금지 라우팅 감지 |
+| MT-005 | history 격리 (#13) | ❌ `tool='law'` (기대 `news`) 감지 |
+
+복원 후 5/5 통과·exit 0. 이로써 5개 시나리오 전부 "잡아야 할 회귀를 실제로 잡는다"가 증명됐습니다.
+
+**과정에서 발견한 eval 자기 오염 버그 (수정)**: MT-001 첫 revert 검증이 실패해야 하는데 통과했습니다. 원인은 `db_query_tool_async`의 키워드 검색이 세션 필터 없는 전역 검색(`WHERE u.role='user' AND u.content ILIKE :kw`)이라, 과거 eval 실행이 chat_history에 남긴 동일 질문 행("그거가 정확히 뭐였는지 다시 말해줘")이 그대로 매치된 것 — eval을 반복 실행할수록 자기 기록이 fixture를 오염시켜 "매치 불가능한 문장"이 매치 가능해지는 구조였습니다. `purge_eval_sessions()`를 추가해 실행 시작 시 `eval-mt-%` 세션을 제거하도록 수정했습니다.
+
+**관찰 (미수정)**: 위 전역 검색은 제품 관점에서도 세션/사용자 경계 없이 전체 대화 이력을 뒤진다는 뜻입니다. 현재는 `user_id`가 하드코딩된 단일 사용자 구조라 실해가 없지만, 멀티 유저로 확장하면 다른 사용자의 대화가 검색되는 격리 문제가 됩니다. 확장 시점에 `session_id` 또는 `user_id` 필터 추가 필요.
 
 ---
 

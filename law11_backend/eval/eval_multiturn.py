@@ -119,6 +119,18 @@ async def last_tool(session_id: str) -> str:
     return row[0] if row and row[0] else ""
 
 
+async def purge_eval_sessions() -> None:
+    """이전 실행이 남긴 eval 세션 제거.
+
+    db_query_tool_async의 키워드 검색은 세션 필터 없이 전역이라, 과거 eval
+    실행이 남긴 동일 질문 행("그거가 정확히 뭐였는지 다시 말해줘")이 그대로
+    매치돼 MT-001이 영원히 통과하는 오염이 생긴다 (revert 검증에서 실측).
+    """
+    sql = text("DELETE FROM chat_history WHERE session_id LIKE 'eval-mt-%'")
+    async with settings.async_engine.begin() as conn:
+        await conn.execute(sql)
+
+
 async def run_scenario(sc: dict) -> dict:
     session_id = f"eval-mt-{uuid.uuid4()}"
     answer = ""
@@ -143,6 +155,7 @@ async def run_scenario(sc: dict) -> dict:
 
 async def main() -> None:
     print(f"\n  멀티턴 회귀 eval — {len(SCENARIOS)}개 시나리오\n")
+    await purge_eval_sessions()
     results = []
     for sc in SCENARIOS:
         print(f"  [{sc['id']}] {sc['bug'][:60]}...")
