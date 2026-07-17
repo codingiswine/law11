@@ -129,6 +129,9 @@ python -m eval.eval_retrieval
 
 # 할루시네이션 검사
 python -m eval.eval_hallucination
+
+# 멀티턴 회귀 (백엔드가 localhost:8000에 떠 있어야 함, 로컬 실행 시 docker 백엔드 컨테이너 중지 확인)
+python -m eval.eval_multiturn
 ```
 
 - `eval/golden_dataset.json` — 30개 골든 케이스. 필드: `id`, `question_type`, `law_name`, `law_name_norm`, `article_number`, `article_number_norm`, `question`, `ground_truth`. 케이스 추가/삭제는 `eval/seed_golden_dataset.py`로 재생성하고, `ground_truth` 핵심 요약은 수동 편집한다.

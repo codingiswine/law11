@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.3.2-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.4.0-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -253,6 +253,7 @@ law11_backend/eval/
 ├── eval_router.py           # 라우터 정확도 평가
 ├── eval_retrieval.py        # 검색 성능 (top-k) 평가
 ├── eval_hallucination.py    # 할루시네이션 + Citation 검증
+├── eval_multiturn.py        # 멀티턴 회귀 eval (수정한 멀티턴 버그 박제)
 ├── collect_failures.py      # 실패 케이스 수집·분류
 ├── improvement_loop.py      # 반복 개선 루프
 ├── perf_report.py           # 운영 로그 기반 성능 보고서
@@ -732,6 +733,23 @@ return [dict(r._mapping) for r in rows.fetchall()]
 ```
 
 **영향**: "비계 기록에서 확인해줘"처럼 명확한 주제어가 있으면 기존처럼 정확히 매치하고, "다시 말해줘" 같은 주제어 없는 자연어 요청은 최근 대화 5건으로 폴백합니다. 라이브 검증: 동일 시나리오("산업안전보건법상 비계 설치 안전 기준" 질문 후 "그거가 정확히 뭐였는지 다시 말해줘") 재현 후 가장 최근 대화(비계 관련 턴)가 정확히 첫 번째로 반환됨을 확인. 회귀 테스트 2개 추가.
+
+---
+
+### 20. 멀티턴 회귀 eval 추가 — 지금까지 고친 멀티턴 버그들을 시나리오로 박제 `v1.4.0`
+
+**문제**: #14~#19에서 고친 버그는 전부 멀티턴(후속 질문, 지시어, 세션 히스토리) 버그인데, 골든 데이터셋 30케이스는 전부 단일턴 질문이라 이 버그 클래스의 회귀를 구조적으로 잡을 수 없었습니다. harness가 30/30을 찍는 동안에도 실제 버그는 계속 손으로 채팅하다 발견됐던 이유입니다.
+
+**수정**: `eval/eval_multiturn.py` 추가. 각 fix 커밋의 라이브 재현 시나리오를 그대로 2턴 시나리오 5개(MT-001~005)로 옮겼고, 실제 API(`/api/ask` + session_id)를 통해 라우터→tool→context 전달 경로 전체를 검증합니다. 판정은 (a) 마지막 턴 답변에 이전 턴 주제 키워드 포함 여부, (b) `chat_history.metadata->>'tool'`에 기록된 라우팅 결과이며, 하나라도 실패하면 exit 1 (CI 연동 가능).
+
+**검증 (mutation test)**: eval이 진짜 회귀를 잡는지 확인하기 위해 #18의 general_tool fix를 일부러 pre-fix 버전으로 되돌리고 실행 → MT-002만 정확히 실패(답변이 다시 "일반론"으로 퇴행)하고 exit 1, 복원 후 5/5 통과·exit 0을 확인했습니다.
+
+**검증 과정에서 발견한 함정**: 처음 revert 검증에서는 fix를 되돌렸는데도 계속 통과했습니다. 원인은 코드가 아니라 환경 — Docker Desktop이 켜지면서 `restart: unless-stopped` 정책으로 fastapi 컨테이너(수정본 이미지)가 함께 부활해 host 8000 포트 트래픽을 전부 받고 있었고, 로컬 uvicorn(revert된 코드)은 한 번도 요청을 받지 못했습니다. 로컬에서 eval/부하테스트를 돌릴 때는 `docker stop law11_backend`로 컨테이너 백엔드를 내렸는지 반드시 확인해야 합니다. 무맥락 프롬프트 3회 직접 호출로 "비계를 알 수 없음"을 교차 확인한 것이 원인 추적의 결정적 단서였습니다.
+
+```bash
+# 백엔드가 localhost:8000에 떠 있는 상태에서
+cd law11_backend && python -m eval.eval_multiturn
+```
 
 ---
 
