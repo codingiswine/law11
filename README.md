@@ -6,7 +6,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.4.3-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.4.4-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 (Cross-Encoder Reranking) → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -803,6 +803,16 @@ cd law11_backend && python -m eval.eval_multiturn
 **수정**: websearch 쪽 정의로 통일 — DB는 주간 스케줄러 동기화라 최신 개정 반영이 늦을 수 있어, 최신 개정 질문은 웹 검색이 맞는 동작입니다. 라벨을 `non-law`로 정정.
 
 **결과**: 라우터 정확도 30/32 → **31/32 (96.9%)** (키워드/LLM 동일). 남은 오분류 1건("계단이 위험해 보여" → general)은 라벨 자체가 논쟁적인 경계 케이스로 보류.
+
+---
+
+### 24. 라우터 eval의 비현실적 경계 케이스를 실사용형 질문으로 교체 `v1.4.4`
+
+**문제**: 마지막 오분류 케이스 "계단이 위험해 보여"를 진단해 보니, 오분류 원인은 LLM 분류 프롬프트에 "위험 관찰성 발화" 정의가 없는 것이었지만 — 그 전에 이런 단문 관찰 발화 자체가 실사용에서 나올 가능성이 낮다는 판단(사용자 피드백). 비현실적인 케이스를 맞추려고 프롬프트를 늘리는 건 eval을 위한 eval.
+
+**수정**: 실제 사용자가 칠 법한 장문 실무 질문("오래된 건물이라 계단도 오래됐을텐데 어떤 안전성 평가를 기준으로 또는 어떤 법적 기준으로 평가하는게 좋을까")으로 교체. "기준" 키워드 fast-path로 law_rag_tool에 정상 라우팅됨을 확인.
+
+**결과**: 라우터 정확도 **32/32 (100%)** (키워드/LLM 동일). 단, 100%는 현재 32케이스 셋이 포화됐다는 뜻이기도 함 — 라우터를 더 개선하려면 지금 셋으로는 감지 불가하며, 다음 개선 전에 오분류가 실제로 발생한 운영 로그(qa_*.jsonl) 기반으로 어려운 케이스를 보강해야 함.
 
 ---
 

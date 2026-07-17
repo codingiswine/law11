@@ -1,10 +1,10 @@
 {
-  "generated_at": "2026-07-18T00:53:45",
+  "generated_at": "2026-07-18T01:11:18",
   "total": 32,
-  "keyword_accuracy": 0.9688,
-  "llm_accuracy": 0.9688,
-  "keyword_correct": 31,
-  "llm_correct": 31,
+  "keyword_accuracy": 1.0,
+  "llm_accuracy": 1.0,
+  "keyword_correct": 32,
+  "llm_correct": 32,
   "details": [
     {
       "question": "산업안전보건법 제17조 내용은?",
@@ -268,13 +268,13 @@
       "llm_correct": true
     },
     {
-      "question": "계단이 위험해 보여",
+      "question": "오래된 건물이라 계단도 오래됐을텐데 어떤 안전성 평가를 기준으로 또는 어떤 법적 기준으로 평가하는게 좋을까",
       "label": "law",
-      "kw_tool": "general_tool",
-      "kw_pred": "non-law",
-      "kw_correct": false,
-      "llm_pred": "non-law",
-      "llm_correct": false
+      "kw_tool": "law_rag_tool",
+      "kw_pred": "law",
+      "kw_correct": true,
+      "llm_pred": "law",
+      "llm_correct": true
     },
     {
       "question": "2025년에 바뀐 법 내용은?",
