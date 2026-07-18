@@ -5,9 +5,9 @@
 [![CI](https://github.com/codingiswine/law11/actions/workflows/ci.yml/badge.svg)](https://github.com/codingiswine/law11/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
-[![Version](https://img.shields.io/badge/Version-1.5.2-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.6.0-orange.svg)]()
 
-A domain-specialized RAG system over **9 Korean occupational-safety laws (1,436 articles)**. Started as a PoC for a Seoul district office's disaster-safety team, rebuilt as an independent project with a measurement-first engineering process.
+A domain-specialized RAG system over **9 Korean occupational-safety laws (1,629 articles)**. Started as a PoC for a Seoul district office's disaster-safety team, rebuilt as an independent project with a measurement-first engineering process.
 
 Pipeline: **PostgreSQL exact-match → Qdrant semantic search → GPT-4o-mini**, with SSE streaming, multi-turn sessions, citation tracking, and an experimental LangGraph Self-RAG path (`/api/ask-multi`).
 
@@ -18,7 +18,7 @@ All numbers are reproducible from the eval scripts in this repo (measured 2026-0
 | Metric | Value |
 |---|---|
 | Retrieval Top-3 recall | **83.3%** (30-case golden set, `eval_retrieval`) |
-| RAGAS Faithfulness / Context Recall | **0.74 / 0.93** (gpt-4o-mini judge) |
+| RAGAS Faithfulness / Context Recall | **0.86 / 0.93** (gpt-4o-mini judge) |
 | Hallucination safe rate | **96.7%** (LLM-judge, 0 citation misses) |
 | Router accuracy | **32/32 (100%)** (keyword fast-path + LLM hybrid) |
 | Multi-turn regression evals | 5 scenarios, each **mutation-tested** (fix reverted → eval must fail) |
@@ -30,6 +30,7 @@ All numbers are reproducible from the eval scripts in this repo (measured 2026-0
 The changelog documents 26 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
 
 - **The golden dataset was lying.** Retrieval eval showed 46.7% Top-3 recall; cross-checking failures against the DB revealed the *retrieval was right and the answer key was wrong* — 13/30 golden article numbers pointed at unrelated articles (e.g., "electric shock prevention" labeled as Article 132, which is about cranes). Correcting the labels moved recall to 83.3% and RAGAS Faithfulness from 0.44 to 0.74. (#25)
+- **193 articles were silently lost to a normalization collision.** Korean laws have branch articles (제14조**의2**, "Article 14-2"); the ingest pipeline collapsed them into the same key as their base article, and the upsert's `ON CONFLICT DO UPDATE` overwrote whichever came first — entire articles (including the one defining the national disaster response HQ) vanished without any error. On the query side the same normalization turned "제14조의2" into "142", matching Article 142. Fixed the scheme end-to-end and resynced: 1,436 → 1,629 articles, RAGAS Faithfulness 0.74 → 0.86. (#28)
 - **The reranker was destroying retrieval.** An A/B/C experiment showed the English-only cross-encoder (`ms-marco-MiniLM`) reordered Korean articles near-randomly, crushing Top-1 accuracy from 66.7% to 13.3%. A multilingual CE also failed to beat plain vector order, so reranking was removed entirely — a net-negative flagship feature, deleted on evidence. (#25)
 - **Evals are themselves verified.** Every multi-turn regression scenario was validated by reverting the fix it enshrines and confirming the eval fails (mutation testing). This process caught an eval that silently passed because a Docker container — not the code under test — was serving the traffic, and another that polluted its own fixtures through the chat-history table. (#20, #21)
 - **The "10 concurrent users" assumption was load-tested for the first time** after being carried untested from the predecessor project — validated at 20 users with zero failures. 

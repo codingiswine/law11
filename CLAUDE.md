@@ -104,6 +104,7 @@ RAG 검색 우선순위는 반드시 이 순서를 따른다:
 
 ### DB 스키마 규칙
 
+- `article_number_norm` 스킴은 `"N"`(본조) 또는 `"N의M"`(가지조문, 예: 제14조의2 → `"14의2"`)이다. 수집(`law_updater_async`)과 조회(`law_rag_tool.normalize_article`)가 반드시 같은 스킴을 유지해야 한다 — 한쪽만 바꾸면 조문 소실/오매칭이 재발한다 (README #28). 표시형 변환은 `law_rag_tool.article_display()` 사용.
 - `chat_history` 테이블의 `metadata` 컬럼은 JSONB다. tool 이름은 `metadata->>'tool'`로 조회한다. `save_chat_history()`에서 `plan.tool.split("_")[0]`으로 단축 저장하므로 tool 이름 비교 시 이 점을 고려한다.
 - `law_chunks`에 새 컬럼을 추가할 경우 반드시 `init.sql`과 `app/tools/law_updater_async.py` INSERT 쿼리를 함께 수정한다.
 

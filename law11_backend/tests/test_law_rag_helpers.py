@@ -37,3 +37,22 @@ def test_mentions_unknown_law_false_when_law_name_known():
 def test_mentions_unknown_law_false_without_article_number():
     """조문 번호 없는 일반 개념 질문 → False (예: '관련법 뭐있어?')"""
     assert law_rag_tool.mentions_unknown_law("관련법 뭐있어?", None, "") is False
+
+
+def test_normalize_article_preserves_branch_number():
+    """가지조문 보존 회귀 테스트: 예전엔 숫자만 추출해 "제14조의2"→"142"로
+    제142조와 오매칭됐음 (v1.6.0 수정)"""
+    assert law_rag_tool.normalize_article("제14조의2") == "14의2"
+    assert law_rag_tool.normalize_article("14조의2") == "14의2"
+    assert law_rag_tool.normalize_article("25의4") == "25의4"
+
+
+def test_normalize_article_plain_number():
+    assert law_rag_tool.normalize_article("제17조") == "17"
+    assert law_rag_tool.normalize_article("17") == "17"
+    assert law_rag_tool.normalize_article("") == ""
+
+
+def test_article_display():
+    assert law_rag_tool.article_display("14의2") == "제14조의2"
+    assert law_rag_tool.article_display("17") == "제17조"
