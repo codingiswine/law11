@@ -134,7 +134,23 @@ def normalize_law_name(name: str) -> str:
     return re.sub(r"[\s·]", "", unicodedata.normalize("NFC", name.strip()))
 
 def normalize_article(article: str) -> str:
-    return re.sub(r"[^\d]", "", article or "")
+    """조문번호 정규화 — 가지조문 보존: "제14조의2"/"14조의2"/"14의2" → "14의2", "제17조" → "17"
+
+    ⚠️ 예전 구현(숫자만 추출)은 "제14조의2"를 "142"로 만들어 제142조와
+    오매칭했다 (v1.6.0에서 수정). DB의 article_number_norm과 반드시 같은
+    스킴("N" 또는 "N의M")을 유지해야 한다 — law_updater_async와 한 쌍.
+    """
+    s = article or ""
+    m = re.search(r"(\d+)\s*(?:조)?\s*의\s*(\d+)", s)
+    if m:
+        return f"{m.group(1)}의{m.group(2)}"
+    return re.sub(r"[^\d]", "", s)
+
+
+def article_display(norm: str) -> str:
+    """norm("14" | "14의2") → 표시형("제14조" | "제14조의2")"""
+    n, _, b = (norm or "").partition("의")
+    return f"제{n}조의{b}" if b else f"제{n}조"
 
 def detect_law_name(query: str) -> Optional[str]:
     """질문 내에서 법령명 자동 감지"""
@@ -209,8 +225,12 @@ async def run(plan):
     yield ToolChunk(type="status", payload="⚖️ 법령 검색 시작...")
 
     law_name = detect_law_name(query)
-    article_match = re.search(r"(?:제)?\s*(\d+)\s*조", query)
-    article_number = article_match.group(1) if article_match else ""
+    article_match = re.search(r"(?:제)?\s*(\d+)\s*조(?:\s*의\s*(\d+))?", query)
+    article_number = ""
+    if article_match:
+        article_number = article_match.group(1)
+        if article_match.group(2):
+            article_number += f"의{article_match.group(2)}"
 
     is_direct_article_query = bool(law_name and article_number)
     unknown_law_hint = mentions_unknown_law(query, law_name, article_number)
@@ -269,8 +289,8 @@ async def run(plan):
                 # 코사인 점수 내림차순 정렬 유지
                 deduped.sort(key=lambda x: x[3], reverse=True)
 
-                contexts = [f"[{law} 제{art}조]\n{text}" for law, art, text, _ in deduped]
-                sources = [f"{law} 제{art}조" for law, art, _, _ in deduped]
+                contexts = [f"[{law} {article_display(art)}]\n{text}" for law, art, text, _ in deduped]
+                sources = [f"{law} {article_display(art)}" for law, art, _, _ in deduped]
                 citations = [
                     {"law_name": law, "article_number": art, "score": round(score, 4), "rank": rank}
                     for rank, (law, art, _, score) in enumerate(deduped, start=1)
@@ -385,7 +405,7 @@ async def run(plan):
             if row:
                 text_val, enforcement_date = row
                 selected_source = "pg"
-                selected_articles = [f"{law_name} 제{article_number}조"] if article_number else [law_name]
+                selected_articles = [f"{law_name} {article_display(article_number)}"] if article_number else [law_name]
                 yield ToolChunk(type="status", payload="✅ [PostgreSQL] 조문 발견")
             else:
                 yield ToolChunk(type="status", payload="🔍 [Qdrant] 벡터 검색으로 전환...")
@@ -396,7 +416,7 @@ async def run(plan):
     # 단, 조문 번호가 명시된 직접 조회(is_direct_article_query)에서 PG miss는
     # "해당 조문 없음"을 의미 — Qdrant로 다른 조문을 대신 꺼내지 않는다.
     if not text_val and is_direct_article_query:
-        msg = f"**{law_name} 제{article_number}조**는 데이터베이스에 존재하지 않습니다.\n\n조문 번호를 확인하시거나 법령명이 정확한지 검토해 주십시오."
+        msg = f"**{law_name} {article_display(article_number)}**는 데이터베이스에 존재하지 않습니다.\n\n조문 번호를 확인하시거나 법령명이 정확한지 검토해 주십시오."
         yield ToolChunk(type="text", payload=msg)
         yield ToolChunk(type="status", payload="✅ 조회 완료 (조문 없음)")
         return
@@ -429,7 +449,7 @@ async def run(plan):
                 selected_source = "qdrant"
                 r_law = best.payload.get("law_name", law_name)
                 r_art = best.payload.get("article_number_norm", "")
-                selected_articles = [f"{r_law} 제{r_art}조" if r_art else r_law]
+                selected_articles = [f"{r_law} {article_display(r_art)}" if r_art else r_law]
                 yield ToolChunk(type="status", payload=f"✅ [Qdrant] 유사도 {best.score:.2f} 조문 발견")
         except Exception as e:
             yield ToolChunk(type="status", payload=f"⚠️ Qdrant 검색 실패: {e}")
@@ -544,7 +564,7 @@ async def run(plan):
         
         # ✅ 스트림 끝나면 전체 텍스트 조합
         summary = "".join(summary_parts).strip()
-        law_url = f"https://www.law.go.kr/법령/{urllib.parse.quote(law_name)}/제{article_number}조"
+        law_url = f"https://www.law.go.kr/법령/{urllib.parse.quote(law_name)}/{article_display(article_number)}"
 
         # ✅ 출력 포맷 (Markdown 하이퍼링크 적용)
         if is_direct_article_query:
@@ -553,7 +573,7 @@ async def run(plan):
             footer = (
                 f"\n\n📘 **법령 정보**  \n"
                 f"시행일자: {enforcement_date or '정보 없음'}  \n"
-                f"출처: [{law_name} 제{article_number}조]({law_url})"
+                f"출처: [{law_name} {article_display(article_number)}]({law_url})"
             )
             yield ToolChunk(type="text", payload=footer)
         else:

@@ -28,6 +28,7 @@ import sys
 import json
 import argparse
 import uuid
+import hashlib
 import asyncio
 from typing import Dict, List, Optional, Any
 from datetime import datetime
@@ -176,6 +177,16 @@ def extract_article_payloads(law_name: str, drf_json: dict) -> List[dict]:
         if not art_no:
             continue
 
+        # ⚠️ 가지조문(제N조의M): DRF는 조문번호("14")와 조문가지번호("2")를 분리해
+        # 준다. 예전엔 가지번호를 무시해 제14조와 제14조의2가 같은 norm "14"로
+        # 뭉개졌고, upsert가 뒤에 온 조문으로 본문을 덮어써 본조가 통째로 소실됐다
+        # (실측: 재난법 제14조 중앙재난안전대책본부가 DB에 없었음 — v1.6.0 수정).
+        # norm 스킴은 "N" 또는 "N의M" — law_rag_tool.normalize_article과 한 쌍.
+        branch = normalize_article(str(a.get("조문가지번호") or ""))
+        display_no = f"제{art_no}조의{branch}" if branch else f"제{art_no}조"
+        if branch:
+            art_no = f"{art_no}의{branch}"
+
         # 텍스트 추출
         text_candidates = []
         if a.get("조문내용"):
@@ -215,11 +226,16 @@ def extract_article_payloads(law_name: str, drf_json: dict) -> List[dict]:
             except (ValueError, AttributeError):
                 enforcement_date = None  # 잘못된 형식은 NULL
 
+        # 삭제된 조문("제9조의2 삭제 <2013.8.6>")은 본문이 없어 RAG에 무의미 — 제외
+        if re.match(r"^제\s*\d+\s*조(?:의\s*\d+)?\s*삭제", full_text.strip()):
+            continue
+
         if full_text:
             payloads.append({
                 "chunk_id": str(uuid.uuid4()),
                 "law_name": law_name,
                 "law_name_norm": normalize_law_name(law_name),
+                "article_number": display_no,
                 "article_number_norm": art_no,
                 "text": clean_text(full_text),
                 "enforcement_date": enforcement_date,
@@ -296,12 +312,16 @@ class AsyncLawUpdater:
                     chunk_id TEXT UNIQUE,
                     law_name TEXT NOT NULL,
                     law_name_norm TEXT NOT NULL,
+                    article_number TEXT,
                     article_number_norm TEXT NOT NULL,
                     text TEXT NOT NULL,
                     enforcement_date DATE,
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """))
+            await conn.execute(text(
+                "ALTER TABLE law_chunks ADD COLUMN IF NOT EXISTS article_number TEXT"
+            ))
             await conn.execute(text("""
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_law_chunks_unique
                     ON law_chunks (law_name_norm, article_number_norm)
@@ -363,13 +383,14 @@ class AsyncLawUpdater:
 
         sql = text("""
             INSERT INTO law_chunks (
-                chunk_id, law_name, law_name_norm, article_number_norm, text, enforcement_date
+                chunk_id, law_name, law_name_norm, article_number, article_number_norm, text, enforcement_date
             )
             VALUES (
-                :chunk_id, :law_name, :law_name_norm, :article_number_norm, :text, :enforcement_date
+                :chunk_id, :law_name, :law_name_norm, :article_number, :article_number_norm, :text, :enforcement_date
             )
             ON CONFLICT (law_name_norm, article_number_norm)
             DO UPDATE SET
+                article_number = EXCLUDED.article_number,
                 text = EXCLUDED.text,
                 enforcement_date = EXCLUDED.enforcement_date,
                 updated_at = CURRENT_TIMESTAMP;
@@ -409,11 +430,17 @@ class AsyncLawUpdater:
             # Qdrant 포인트 생성
             points = []
             for r, vec in zip(batch, vectors):
-                # 고유 ID 생성 (법령명 해시 + 조문번호)
-                pid = int(f"{abs(hash(r['law_name_norm'])) % 10_000}{r['article_number_norm']:0>4}")
+                # 고유 ID: (법령, 조문) 기반 결정론적 해시 — 재실행해도 같은 id로
+                # upsert되어야 중복 포인트가 안 쌓인다. ⚠️ 예전의 Python hash()는
+                # 프로세스마다 솔트가 달라 불안정했고, 가지조문 norm("14의2")은
+                # int() 변환이 불가능했다 (v1.6.0 수정).
+                pid = int(hashlib.md5(
+                    f"{r['law_name_norm']}:{r['article_number_norm']}".encode()
+                ).hexdigest()[:12], 16)
                 payload = {
                     "law_name": r["law_name"],
                     "law_name_norm": r["law_name_norm"],
+                    "article_number": r["article_number"],
                     "article_number_norm": r["article_number_norm"],
                     "text": r["text"],
                     "enforcement_date": r["enforcement_date"],
