@@ -1,12 +1,14 @@
 # Law11 — 산업안전보건 법령 RAG 챗봇
 
+**한국어** | [English summary](README.en.md)
+
 [![CI](https://github.com/codingiswine/law11/actions/workflows/ci.yml/badge.svg)](https://github.com/codingiswine/law11/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.5.1-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.5.2-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,436개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -861,6 +863,12 @@ cd law11_backend && python -m eval.eval_multiturn
 **한 것**: 최상단 핵심 수치 표가 도메인 수치(법령 수, 조문 수) 중심이었는데, 이 프로젝트의 실제 차별점인 엔지니어링 검증 지표(retrieval recall, RAGAS, 할루시네이션 안전율, mutation-verified 멀티턴 eval, CI, 부하테스트, changelog 사이클)를 상단으로 올리고 도메인 수치는 하위 표로 분리.
 
 **할루시네이션 재측정**: 기존 report(0%, 07-16)는 오염된 골든셋 기준이라 교정 후 베이스라인으로 재측정 — GROUNDED 23 / PARTIAL 6 / HALLUCINATION 1, **안전율 96.7%**, Citation 누락 0건. 유일한 HALLUCINATION 판정 1건(GS-023)은 답변이 중대재해처벌법 제6조 원문("제4조 또는 제5조를 위반하여…")을 그대로 인용한 것을 judge가 조문 구조 오해로 감점한 경계 케이스. 0%→96.7%는 품질 하락이 아니라 정답지가 정직해진 결과.
+
+---
+
+### 27. 영문 요약 README 추가 `v1.5.2`
+
+`README.en.md` — 프로젝트 개요, 검증·품질 지표, 엔지니어링 하이라이트(골든셋 오염 발견, 리랭커 제거, mutation-tested eval), 아키텍처, eval 명령, 빠른 시작을 담은 영문 요약본. 글로벌 회사 지원 시 서류 검토자가 한국어 없이도 핵심을 파악할 수 있도록 함. 전체 changelog와 상세 문서는 한국어 README가 원본.
 
 ---
 
