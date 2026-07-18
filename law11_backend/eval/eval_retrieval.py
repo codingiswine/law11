@@ -50,10 +50,11 @@ def article_matches(retrieved_articles: List[str], law_name: str, article_number
     """retrieved_articles 중 정답 조문이 있는지 확인 (정규화 후 비교)."""
     law_n = normalize(law_name)
     art_n = article_number.strip()
+    # "제3조"가 "제33조"에 부분 문자열로 오탐되지 않도록 "제N조" 완전형으로 비교
+    needle = f"제{art_n}조"
     for art in retrieved_articles:
         art_norm = normalize(art)
-        # "법령명제17조" 또는 "제17조" 포함 확인
-        if law_n in art_norm and art_n in art_norm:
+        if law_n in art_norm and needle in art_norm:
             return True
     return False
 

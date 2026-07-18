@@ -44,7 +44,6 @@ from qdrant_client.http.models import FieldCondition, MatchValue, Filter
 from core.stream import ToolChunk
 from app.tools.websearch_tool import summarize_web
 from app.services.embedding_cache import get_embedding_async
-from app.services import reranker
 try:
     from app.config import settings   # ✅ Docker 실행 시
 except ModuleNotFoundError:
@@ -244,17 +243,17 @@ async def run(plan):
                     limit=10,
                     with_payload=True
                 )
-            # Re-ranking: 10개 → 상위 5개 선택
-            if len(results) > 1:
-                docs = [r.payload.get("text", "") for r in results]
-                ranked_indices = reranker.rerank(query, docs, top_k=5)
-                results = [results[i] for i in ranked_indices]
+            # ⚠️ Cross-Encoder 리랭킹 제거 (v1.5.0): ms-marco-MiniLM은 영어 전용이라
+            # 한국어 조문을 사실상 무작위 재배열했음 — 교정된 골든셋 30케이스 실측에서
+            # Top-1 66.7%(벡터 순서) → 13.3%(EN CE), 다국어 CE도 벡터를 못 이김
+            # (eval/_rerank_experiment.py). 벡터 코사인 순서 상위 5개를 그대로 쓴다.
+            results = results[:5]
             # 0.45: 법령명 미인식 상태의 전체 검색이므로 넓게 허용.
             # 사용자가 법령 용어를 쓰지 않아도 관련 조문을 건질 수 있어야 한다.
             # 단, unknown_law_hint(구체적 법명+조문을 물었는데 그 법이 DB에
             # 없는 경우)면 threshold를 넘겨도 신뢰하지 않고 웹 폴백으로 보낸다.
             if results and results[0].score >= 0.45 and not unknown_law_hint:
-                # 중복 조문 제거 (Cross-Encoder 순서 기준으로 우선순위 결정)
+                # 중복 조문 제거 (코사인 유사도 순서 기준)
                 deduped = []
                 seen_articles = set()
                 for r in results:
@@ -267,7 +266,7 @@ async def run(plan):
                         deduped.append((r_law, r_article, text_val, r.score))
 
                 # ✅ 화면에 표시되는 %(Qdrant 코사인 유사도)와 배지 순서가 일치하도록
-                # 코사인 점수 내림차순으로 재정렬 (선택 자체는 위에서 Cross-Encoder로 이미 완료)
+                # 코사인 점수 내림차순 정렬 유지
                 deduped.sort(key=lambda x: x[3], reverse=True)
 
                 contexts = [f"[{law} 제{art}조]\n{text}" for law, art, text, _ in deduped]
@@ -418,15 +417,11 @@ async def run(plan):
                 limit=10,
                 with_payload=True
             )
-            # Re-ranking: 10개 → 상위 5개 선택 후 best는 첫 번째
-            if len(results) > 1:
-                docs = [r.payload.get("text", "") for r in results]
-                ranked_indices = reranker.rerank(query, docs, top_k=5)
-                results = [results[i] for i in ranked_indices]
+            # 리랭킹 제거 (v1.5.0, Case A와 동일 근거) — 벡터 순서 상위 5개 사용
+            results = results[:5]
             # 0.50: 이미 법령명으로 범위를 좁혔는데 여기서도 미달이면
             # 해당 법령 DB에 답이 없다는 신호 → web fallback이 더 정확.
             # Case A(0.45)보다 엄격한 이유: 검색 범위가 좁을수록 낮은 score = 진짜 없음.
-            # 주의: score는 reranking 후 cross-encoder top-1의 원본 Qdrant 코사인값임.
             if results and results[0].score >= 0.5:
                 best = results[0]
                 text_val = best.payload.get("text", "")

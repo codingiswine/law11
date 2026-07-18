@@ -60,6 +60,10 @@ SCENARIOS = [
         # 원래 재현("그거 안 지키면 처벌은?")은 관련도 게이트 제거(v1.4.2) 후
         # law_rag_tool로 가게 되어 websearch context 경로를 안 지남. "해외"
         # fast-path 키워드로 websearch_tool 라우팅을 고정해 같은 fix를 박제.
+        # 주의: turn 2에 주제어를 넣으면 GPT가 "그거"를 문장 안에서 해석해버려
+        # context를 안 읽어도 답이 됨 (실측: "해외 산업안전 쪽에서는 그거..." →
+        # '그거'='산업안전 규제'로 오해석). 지시어의 대상은 반드시 이전 턴에만
+        # 존재해야 이 시나리오가 context 사용을 실제로 검증한다.
         "id": "MT-003",
         "bug": "(3634f51) websearch_tool이 후속 질문에서 context를 무시하고 엉뚱한 답",
         "turns": [
