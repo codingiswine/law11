@@ -1242,5 +1242,5 @@ MIT License © 2024 Daniel Shin
 ---
 
 <div align="center">
-  <p>개발자: 신다니엘 (Daniel Shin) · <a href="mailto:codingiswine@gmail.com">codingiswine@gmail.com</a> · <a href="https://github.com/codingiswine">@codingiswine</a></p>
+  <p>Developer: Daniel Shin · <a href="mailto:codingiswine@gmail.com">codingiswine@gmail.com</a> · <a href="https://github.com/codingiswine">@codingiswine</a> (GitHub)</p>
 </div>
