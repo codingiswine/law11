@@ -14,6 +14,7 @@ GPT 답변은 직접 호출 (DB 이력 / LangChain Memory 사이드이펙트 없
     python -m eval.retriever
 """
 
+import re
 import sys
 import asyncio
 from pathlib import Path
@@ -22,8 +23,16 @@ from typing import List, Dict, Any
 BACKEND_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
+from sqlalchemy import text as sqltext
+
 from app.config import settings
 from app.services.rag_service import get_embedding_async, search_qdrant_async
+from app.tools.law_rag_tool import (
+    article_display,
+    detect_law_name,
+    get_priority_law,
+    normalize_law_name,
+)
 
 openai_client = settings.openai_client
 
@@ -53,25 +62,51 @@ async def retrieve_and_generate(
             "retrieved_articles": List[str]  # ["산업안전보건법 제17조", ...]
         }
     """
-    # 1. 임베딩 생성 (SQLite 캐시 활용)
+    # ⚠️ 프로덕션(law_rag_tool)과 같은 검색 우선순위를 따른다 (v1.6.1):
+    # ① 법령명+조문번호가 명시된 질문 → PostgreSQL 정확 매칭
+    # ② 아니면 Qdrant 의미 검색 (조건 키워드가 법령을 암시하면 해당 법령 필터)
+    # 예전에는 ①을 건너뛰고 순수 벡터만 측정해, direct_article 질문의 RAGAS
+    # 수치가 사용자가 실제로 타는 경로를 반영하지 않았다.
+    law_name = detect_law_name(question)
+    m = re.search(r"(?:제)?\s*(\d+)\s*조(?:\s*의\s*(\d+))?", question)
+    article_norm = ""
+    if m:
+        article_norm = m.group(1) + (f"의{m.group(2)}" if m.group(2) else "")
+
+    if law_name and article_norm:
+        sql = sqltext("""
+            SELECT text FROM law_chunks
+            WHERE law_name_norm = :law AND article_number_norm = :num LIMIT 1
+        """)
+        async with settings.async_engine.connect() as conn:
+            row = (await conn.execute(
+                sql, {"law": normalize_law_name(law_name), "num": article_norm}
+            )).fetchone()
+        if row:
+            label = f"{law_name} {article_display(article_norm)}"
+            return await _generate(question, [row[0].strip()], [label])
+
+    # 임베딩 생성 (SQLite 캐시 활용) 후 Qdrant 의미 검색.
+    # 프로덕션과 동일하게, 우선 법령 필터 결과가 부실하면(top score < 0.45)
+    # 전체 법령으로 재검색한다.
     embedding = await get_embedding_async(question)
+    priority_law = get_priority_law(question)
+    qdrant_results = await search_qdrant_async(embedding, limit=limit, law_name_norm=priority_law)
+    if priority_law and (not qdrant_results or qdrant_results[0]["score"] < 0.45):
+        qdrant_results = await search_qdrant_async(embedding, limit=limit)
 
-    # 2. Qdrant 벡터 검색 (필터 없음 — 의미론적 검색)
-    qdrant_results = await search_qdrant_async(embedding, limit=limit)
-
-    # 3. contexts 추출 (실제 Qdrant payload 필드명 기준)
     contexts: List[str] = []
     retrieved_articles: List[str] = []
 
     for result in qdrant_results:
         payload = result.get("payload", {})
-        law_name = payload.get("law_name", "")
+        r_law = payload.get("law_name", "")
         article_num = payload.get("article_number_norm", "")
         article_text = payload.get("text", "")
 
         if article_text.strip():
             contexts.append(article_text.strip())
-            label = f"{law_name} 제{article_num}조" if article_num else law_name
+            label = f"{r_law} {article_display(article_num)}" if article_num else r_law
             retrieved_articles.append(label)
 
     if not contexts:
@@ -82,7 +117,11 @@ async def retrieve_and_generate(
             "retrieved_articles": [],
         }
 
-    # 4. 컨텍스트 구성
+    return await _generate(question, contexts, retrieved_articles)
+
+
+async def _generate(question: str, contexts: List[str], retrieved_articles: List[str]) -> Dict[str, Any]:
+    """검색된 조문으로 GPT 답변 생성 (non-streaming, 결정론적)"""
     context_block = "\n\n".join(
         f"[{retrieved_articles[i]}]\n{ctx}"
         for i, ctx in enumerate(contexts)
@@ -95,7 +134,6 @@ async def retrieve_and_generate(
         f"답변:"
     )
 
-    # 5. GPT 답변 생성 (non-streaming, 결정론적)
     response = await openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
