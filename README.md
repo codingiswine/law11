@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.6.3-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.6.4-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -930,6 +930,19 @@ cd law11_backend && python -m eval.eval_multiturn
 | 4 | **웹 소스 전멸 시 근거 0에서 수치 기준 생성** — "소화기는 100㎡당 1개" 같은 확답을 법적 근거 포맷으로 출력 (웹 폴백이 "검색 결과 없음" 문구를 GPT에 넘겨 자유 생성 유발) | 검색 결과가 비면 GPT 생성 자체를 중단하고 "확인할 수 없습니다" 정직 안내 — 법률 챗봇에서 근거 없는 확답은 오답보다 나쁨 |
 
 **검증**: 시나리오별 재주입으로 4건 모두 수정 확인, 정상 케이스 회귀 없음(존재하지 않는 조문 안내, 베이스라인 응답, 멀티턴 eval 5/5, pytest 49개).
+
+---
+
+### 32. 주간 동기화에 폐지 조문 제거 + PG↔Qdrant 정합성 검증 추가 `v1.6.4`
+
+**문제** (예방조치 트랙 2번): 주간 스케줄러는 upsert만 하므로 두 가지 사각지대가 있었습니다 — (a) **법령 개정으로 폐지된 조문이 DB에 영원히 남아 현행 법령처럼 검색·인용**됨 (법률 챗봇에서 심각한 오답 리스크), (b) 동기화가 중간에 죽으면 PG만 갱신되고 Qdrant는 옛 버전인 **불일치가 조용히 잔존**.
+
+**수정**:
+- `remove_stale_articles()`: 법령별 동기화 성공 직후, 최신 API 응답에 없는 조문을 PG(`NOT IN` 삭제)와 Qdrant(결정론적 point id 대조 후 삭제) 양쪽에서 제거. **fetch 실패 시에는 도달하지 않는 위치에 배치**해 API 장애가 대량 오삭제로 번지지 않음.
+- `verify_consistency()`: 동기화 끝에 법령별 조문 수를 PG↔Qdrant 대조. 불일치 시 어느 법령인지 특정해 경고하고 CLI exit 1 (cron/CI에서 실패로 감지 가능).
+- point id 계산을 `qdrant_point_id()` 헬퍼로 단일화 — upsert와 삭제가 다른 계산을 쓰면 오삭제로 이어지므로.
+
+**검증 (실측)**: 가짜 폐지 조문(제9999조)을 PG·Qdrant에 심고 단일 법령 동기화 → "폐지 조문 제거: PG 1개 / Qdrant 1개" 후 정합성 ✅. 반대로 Qdrant에만 고아 포인트를 심으면 "산업안전보건법: PG 185 ≠ Qdrant 186"으로 위치까지 특정해 감지. 가지조문 norm 조립·삭제 조문 스킵·point id 결정론에 대한 순수 함수 단위 테스트 3개 추가, pytest 52개 통과.
 
 ---
 

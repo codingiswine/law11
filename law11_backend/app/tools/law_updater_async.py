@@ -110,6 +110,17 @@ def normalize_article(article: str) -> str:
     return re.sub(r"[^\d]", "", article or "")
 
 
+def qdrant_point_id(law_name_norm: str, article_number_norm: str) -> int:
+    """(법령, 조문) 기반 결정론적 Qdrant point id.
+
+    upsert와 폐지 조문 삭제가 반드시 같은 계산을 써야 하므로 한 곳에 둔다.
+    ⚠️ Python hash()는 프로세스마다 솔트가 달라 불안정했음 (v1.6.0에서 md5로 교체).
+    """
+    return int(hashlib.md5(
+        f"{law_name_norm}:{article_number_norm}".encode()
+    ).hexdigest()[:12], 16)
+
+
 def clean_text(text: str) -> str:
     """
     유니코드 문제 문자 제거 및 정제
@@ -430,13 +441,7 @@ class AsyncLawUpdater:
             # Qdrant 포인트 생성
             points = []
             for r, vec in zip(batch, vectors):
-                # 고유 ID: (법령, 조문) 기반 결정론적 해시 — 재실행해도 같은 id로
-                # upsert되어야 중복 포인트가 안 쌓인다. ⚠️ 예전의 Python hash()는
-                # 프로세스마다 솔트가 달라 불안정했고, 가지조문 norm("14의2")은
-                # int() 변환이 불가능했다 (v1.6.0 수정).
-                pid = int(hashlib.md5(
-                    f"{r['law_name_norm']}:{r['article_number_norm']}".encode()
-                ).hexdigest()[:12], 16)
+                pid = qdrant_point_id(r["law_name_norm"], r["article_number_norm"])
                 payload = {
                     "law_name": r["law_name"],
                     "law_name_norm": r["law_name_norm"],
@@ -463,6 +468,99 @@ class AsyncLawUpdater:
     # ────────────────────────────────────────────────────────────
     # 법령 업데이트 로직
     # ────────────────────────────────────────────────────────────
+
+    async def remove_stale_articles(self, law_name_norm: str, current_norms: set) -> tuple:
+        """API 최신본에서 사라진(폐지·이관) 조문을 PG·Qdrant 양쪽에서 제거.
+
+        upsert만으로는 폐지 조문이 영원히 검색된다 — 법률 챗봇에서 폐지된
+        조문을 현행처럼 인용하는 오답 리스크 (README #32). 호출 전제:
+        current_norms는 방금 성공한 fetch에서 나온 비어있지 않은 집합이어야
+        한다. fetch 실패/빈 응답 시에는 호출되지 않으므로(update_one_law가
+        먼저 return) API 장애가 대량 오삭제로 번지지 않는다.
+        """
+        norms = list(current_norms)
+
+        async with self.engine.begin() as conn:
+            res = await conn.execute(
+                text("""
+                    DELETE FROM law_chunks
+                    WHERE law_name_norm = :law
+                      AND NOT (article_number_norm = ANY(:norms))
+                """),
+                {"law": law_name_norm, "norms": norms},
+            )
+        pg_removed = res.rowcount or 0
+
+        # Qdrant: 해당 법령의 기존 point id를 전부 걷어 기대 집합에 없는 것 삭제
+        expected_ids = {qdrant_point_id(law_name_norm, n) for n in current_norms}
+        law_filter = qmodels.Filter(must=[
+            qmodels.FieldCondition(key="law_name_norm", match=qmodels.MatchValue(value=law_name_norm))
+        ])
+        stale_ids = []
+        offset = None
+        while True:
+            points, offset = await asyncio.to_thread(
+                self.qdrant.scroll,
+                collection_name=COLLECTION,
+                scroll_filter=law_filter,
+                limit=500,
+                with_payload=False,
+                with_vectors=False,
+                offset=offset,
+            )
+            stale_ids.extend(p.id for p in points if p.id not in expected_ids)
+            if offset is None:
+                break
+        if stale_ids:
+            await asyncio.to_thread(
+                self.qdrant.delete,
+                collection_name=COLLECTION,
+                points_selector=qmodels.PointIdsList(points=stale_ids),
+            )
+        return pg_removed, len(stale_ids)
+
+    async def verify_consistency(self) -> bool:
+        """동기화 후 PG↔Qdrant 법령별 조문 수 대조.
+
+        동기화가 중간에 죽으면 한쪽만 갱신된 불일치가 조용히 남는다 — 주간
+        스케줄러가 이를 알아차릴 수 있도록 매 동기화 끝에 실행 (README #32).
+        """
+        _print = console.print if console else print
+
+        async with self.engine.connect() as conn:
+            res = await conn.execute(text(
+                "SELECT law_name_norm, count(*) FROM law_chunks GROUP BY law_name_norm"
+            ))
+            pg_counts = {r[0]: r[1] for r in res.fetchall()}
+
+        ok = True
+        _print("\n🔎 PG ↔ Qdrant 정합성 검증")
+        for law_norm in sorted(pg_counts):
+            pg_n = pg_counts[law_norm]
+            qd = await asyncio.to_thread(
+                self.qdrant.count,
+                collection_name=COLLECTION,
+                count_filter=qmodels.Filter(must=[
+                    qmodels.FieldCondition(key="law_name_norm", match=qmodels.MatchValue(value=law_norm))
+                ]),
+                exact=True,
+            )
+            if qd.count != pg_n:
+                ok = False
+                _print(f"  ❌ {law_norm}: PG {pg_n} ≠ Qdrant {qd.count}")
+
+        # 총합 대조 — PG에 없는 법령이 Qdrant에만 남은 경우까지 잡는다
+        total_pg = sum(pg_counts.values())
+        total_qd = await asyncio.to_thread(self.qdrant.count, collection_name=COLLECTION, exact=True)
+        if total_qd.count != total_pg:
+            ok = False
+            _print(f"  ❌ 총합 불일치: PG {total_pg} ≠ Qdrant {total_qd.count}")
+
+        if ok:
+            _print(f"  ✅ 일치: {len(pg_counts)}개 법령, 총 {total_pg}개 조문")
+        else:
+            _print("  ⚠️ 불일치 감지 — 전체 재동기화(--all) 또는 수동 확인 필요")
+        return ok
 
     async def update_one_law(self, law_name: str) -> int:
         """단일 법령 업데이트"""
@@ -498,6 +596,12 @@ class AsyncLawUpdater:
                 uploaded += count
 
             await self.upsert_qdrant(rows, progress_callback=update_progress)
+
+            # 5. 폐지 조문 제거 (최신본 fetch 성공 시에만 도달)
+            current_norms = {r["article_number_norm"] for r in rows}
+            pg_rm, qd_rm = await self.remove_stale_articles(rows[0]["law_name_norm"], current_norms)
+            if (pg_rm or qd_rm) and console:
+                console.print(f"🗑️  [{law_name}] 폐지 조문 제거: PG {pg_rm}개 / Qdrant {qd_rm}개")
 
             if console:
                 console.print(f"✅ [{law_name}] 완료: {len(rows)}개 조문 동기화", style="green bold")
@@ -538,6 +642,8 @@ class AsyncLawUpdater:
         else:
             print(f"\n🎉 완료: {total_articles}개 조문 동기화 ({elapsed:.1f}초)")
 
+        return await self.verify_consistency()
+
 
 # ────────────────────────────────────────────────────────────────
 # CLI
@@ -558,11 +664,15 @@ async def main():
 
     async with AsyncLawUpdater() as updater:
         if args.all:
-            await updater.update_all()
+            consistent = await updater.update_all()
+            if not consistent:
+                sys.exit(1)   # CI/cron에서 불일치를 실패로 감지
         elif args.law:
             count = await updater.update_one_law(args.law)
             if console:
                 console.print(f"\n✅ {args.law}: {count}개 조문 동기화 완료")
+            if not await updater.verify_consistency():
+                sys.exit(1)
 
 
 if __name__ == "__main__":
