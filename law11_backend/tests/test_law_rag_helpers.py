@@ -24,6 +24,30 @@ def test_extract_web_citations_bold_markdown_format():
     ]
 
 
+def test_extract_web_citations_article_inside_bracket():
+    """회귀 테스트: 조문 번호까지 대괄호 안에 넣는 변형도 추출해야 함
+    (실측: "한 층에 소화기 몇 개?" 답변이 "[소방시설 설치 및 관리에 관한
+    법률 제8조]" 형태로 인용해 배지가 하나도 안 뜸 — #34)"""
+    answer = "🔹 **법적 근거**\n\n[소방시설 설치 및 관리에 관한 법률 제8조]\n소화기는 각 층에 설치해야 한다."
+    cites = law_rag_tool._extract_web_citations(answer)
+    assert cites == [{"law_name": "소방시설 설치 및 관리에 관한 법률", "article_number": "8", "score": None, "rank": 1}]
+
+
+def test_extract_web_citations_mixed_formats_ranked_by_position():
+    """세 표기 변형이 섞여도 등장 순서대로 rank가 매겨져야 함"""
+    answer = (
+        "[소방기본법] 제2조: 정의...\n"
+        "[소방시설 설치 및 관리에 관한 법률 제8조] 소화기 설치...\n"
+        "**산업안전보건법** 제38조: 안전조치...\n"
+    )
+    cites = law_rag_tool._extract_web_citations(answer)
+    assert [(c["law_name"], c["article_number"], c["rank"]) for c in cites] == [
+        ("소방기본법", "2", 1),
+        ("소방시설 설치 및 관리에 관한 법률", "8", 2),
+        ("산업안전보건법", "38", 3),
+    ]
+
+
 def test_mentions_unknown_law_true_for_unknown_law_plus_article():
     """DB에 없는 법 + 조문 번호 → True (예: 소방기본법)"""
     assert law_rag_tool.mentions_unknown_law("소방기본법 2조", None, "2") is True
