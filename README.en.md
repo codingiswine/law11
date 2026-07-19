@@ -1,6 +1,6 @@
 # Law11 — Korean Occupational Safety Law RAG Chatbot
 
-> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (26 documented find-fix cycles).
+> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (33 documented find-fix cycles).
 
 [![CI](https://github.com/codingiswine/law11/actions/workflows/ci.yml/badge.svg)](https://github.com/codingiswine/law11/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
@@ -13,7 +13,7 @@ Pipeline: **PostgreSQL exact-match → Qdrant semantic search → GPT-4o-mini**,
 
 ## Verified quality metrics
 
-All numbers are reproducible from the eval scripts in this repo (measured 2026-07-18, on the corrected golden set):
+All numbers are reproducible from the eval scripts in this repo (measured 2026-07-19, on the corrected golden set):
 
 | Metric | Value |
 |---|---|
@@ -22,19 +22,21 @@ All numbers are reproducible from the eval scripts in this repo (measured 2026-0
 | Hallucination safe rate | **96.7%** (LLM-judge, 0 citation misses) |
 | Router accuracy | **32/32 (100%)** (keyword fast-path + LLM hybrid) |
 | Multi-turn regression evals | 5 scenarios, each **mutation-tested** (fix reverted → eval must fail) |
-| Automated tests / CI | 46 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
+| Automated tests / CI | 54 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
 | Load test | 20 concurrent users, zero failures (2× the design target) |
+| Fault injection | 5 dependencies (PG, Qdrant, OpenAI, Tavily, Naver) killed individually — 4 defects found and fixed (#31) |
 
 ## Engineering highlights
 
-The changelog documents 26 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
+The changelog documents 33 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
 
 - **The golden dataset was lying.** Retrieval eval showed 46.7% Top-3 recall; cross-checking failures against the DB revealed the *retrieval was right and the answer key was wrong* — 13/30 golden article numbers pointed at unrelated articles (e.g., "electric shock prevention" labeled as Article 132, which is about cranes). Correcting the labels moved recall to 83.3% and RAGAS Faithfulness from 0.44 to 0.74. (#25)
 - **193 articles were silently lost to a normalization collision.** Korean laws have branch articles (제14조**의2**, "Article 14-2"); the ingest pipeline collapsed them into the same key as their base article, and the upsert's `ON CONFLICT DO UPDATE` overwrote whichever came first — entire articles (including the one defining the national disaster response HQ) vanished without any error. On the query side the same normalization turned "제14조의2" into "142", matching Article 142. Fixed the scheme end-to-end and resynced: 1,436 → 1,629 articles, RAGAS Faithfulness 0.74 → 0.86. (#28)
 - **The reranker was destroying retrieval.** An A/B/C experiment showed the English-only cross-encoder (`ms-marco-MiniLM`) reordered Korean articles near-randomly, crushing Top-1 accuracy from 66.7% to 13.3%. A multilingual CE also failed to beat plain vector order, so reranking was removed entirely — a net-negative flagship feature, deleted on evidence. (#25)
 - **Evals are themselves verified.** Every multi-turn regression scenario was validated by reverting the fix it enshrines and confirming the eval fails (mutation testing). This process caught an eval that silently passed because a Docker container — not the code under test — was serving the traffic, and another that polluted its own fixtures through the chat-history table. (#20, #21)
-- **The "10 concurrent users" assumption was load-tested for the first time** after being carried untested from the predecessor project — validated at 20 users with zero failures. 
-- **Laws stay current automatically**: a weekly APScheduler job syncs PostgreSQL and Qdrant from the Korean Ministry of Government Legislation (DRF) API.
+- **Killing dependencies on purpose surfaced a hallucination path that only exists in production incidents.** With every web-search backend (Tavily, Naver) deliberately taken down, the fallback still asked GPT to "summarize the search results" — with zero results. It answered anyway, inventing a specific numeric safety standard and presenting it as legal fact. Fixed by aborting generation when the search context is empty instead of letting the model fill the gap. Also found in the same sweep: a PostgreSQL outage was reported to the user as "this article doesn't exist," misrepresenting an infrastructure failure as a data-absence fact. (#31)
+- **The "10 concurrent users" assumption was load-tested for the first time** after being carried untested from the predecessor project — validated at 20 users with zero failures.
+- **Laws stay current automatically**: a weekly APScheduler job syncs PostgreSQL and Qdrant from the Korean Ministry of Government Legislation (DRF) API, now with post-sync consistency checks and stale-article cleanup so law changes/repeals don't linger as silent drift. (#32)
 
 ## Architecture
 
@@ -67,8 +69,8 @@ FastAPI · PostgreSQL (asyncpg) · Qdrant · OpenAI (gpt-4o-mini, text-embedding
 ## Quick start
 
 ```bash
-cp law11_backend/env.example law11_backend/.env   # set OPENAI_API_KEY, DB_PASS
-docker compose up --build                          # backend :8000, frontend :3000
+cp law11_backend/.env.example law11_backend/.env   # set OPENAI_API_KEY, DB_PASS
+docker compose up --build                           # backend :8000, frontend :3000
 docker compose exec fastapi python -m app.tools.law_updater_async --all   # load laws
 ```
 
