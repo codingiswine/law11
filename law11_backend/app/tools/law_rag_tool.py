@@ -152,6 +152,26 @@ def article_display(norm: str) -> str:
     n, _, b = (norm or "").partition("의")
     return f"제{n}조의{b}" if b else f"제{n}조"
 
+
+# ── 법령 용어 매핑 (질의 확장) ─────────────────────────────────
+# 사용자 표현 ↔ 법령 공식 용어가 어긋나면 임베딩 검색이 엉뚱한 조문을 상위로
+# 올린다 (실측: "폭발 위험 분위기" 질의가 발파 조문을 검색 — 규칙의 공식 용어는
+# "폭발위험장소"라서. 용어 부착 시 제230조가 4위→1위, README #33).
+# ⚠️ 전역 어휘 부스트는 실험에서 기각됨(다른 케이스 최대 7건 회귀) — 여기에는
+# 실측으로 검증된 매핑만 추가한다. 트리거는 공백 제거 정규형으로 비교.
+_LEGAL_TERM_MAP = [
+    ("폭발위험분위기", "폭발위험장소"),
+]
+
+
+def expand_legal_terms(query: str) -> str:
+    """임베딩 검색용 질의 확장 — 매핑된 법령 공식 용어를 부착 (표시/저장에는 미사용)."""
+    q_norm = re.sub(r"\s+", "", query)
+    for trigger, term in _LEGAL_TERM_MAP:
+        if trigger in q_norm and term not in q_norm:
+            return f"{query} (관련 법령 용어: {term})"
+    return query
+
 def detect_law_name(query: str) -> Optional[str]:
     """질문 내에서 법령명 자동 감지"""
     LAWS = [
@@ -241,7 +261,7 @@ async def run(plan):
         priority_law = get_priority_law(query)
         yield ToolChunk(type="status", payload="🧠 [Qdrant] 전체 법령 의미 검색 중...")
         try:
-            embedding = await get_embedding_async(query)
+            embedding = await get_embedding_async(expand_legal_terms(query))
 
             # 우선 법령이 있으면 해당 법령 내에서 먼저 검색, 없으면 전체 검색
             q_filter = (
@@ -466,7 +486,7 @@ async def run(plan):
     if not text_val:
         yield ToolChunk(type="status", payload="🧠 [Qdrant] 벡터 검색 중...")
         try:
-            embedding = await get_embedding_async(query)
+            embedding = await get_embedding_async(expand_legal_terms(query))
             q_filter = Filter(
                 must=[
                     FieldCondition(key="law_name_norm", match=MatchValue(value=search_law_norm)),
