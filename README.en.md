@@ -5,7 +5,7 @@
 [![CI](https://github.com/codingiswine/law11/actions/workflows/ci.yml/badge.svg)](https://github.com/codingiswine/law11/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
-[![Version](https://img.shields.io/badge/Version-1.6.1-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.6.2-orange.svg)]()
 
 A domain-specialized RAG system over **9 Korean occupational-safety laws (1,629 articles)**. Started as a PoC for a Seoul district office's disaster-safety team, rebuilt as an independent project with a measurement-first engineering process.
 
@@ -17,7 +17,7 @@ All numbers are reproducible from the eval scripts in this repo (measured 2026-0
 
 | Metric | Value |
 |---|---|
-| Retrieval Top-3 recall | **83.3%** (30-case golden set, `eval_retrieval`) |
+| Retrieval Top-3 recall | **93.3%** (30-case golden set, with multi-accepted-article policy — #30) |
 | RAGAS Faithfulness / Context Recall | **0.71–0.86 / 0.93** (gpt-4o-mini judge; Faithfulness shown as a 3-run range — the judge itself varies ±0.08 run-to-run) |
 | Hallucination safe rate | **96.7%** (LLM-judge, 0 citation misses) |
 | Router accuracy | **32/32 (100%)** (keyword fast-path + LLM hybrid) |

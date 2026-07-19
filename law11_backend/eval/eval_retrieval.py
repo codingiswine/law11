@@ -47,19 +47,23 @@ def normalize(s: str) -> str:
 
 
 def article_matches(retrieved_articles: List[str], law_name: str, article_number: str) -> bool:
-    """retrieved_articles 중 정답 조문이 있는지 확인 (정규화 후 비교)."""
-    law_n = normalize(law_name)
-    art_n = article_number.strip()
-    # "제3조"가 "제33조"에 부분 문자열로 오탐되지 않도록 "제N조" 완전형으로 비교
-    needle = f"제{art_n}조"
-    for art in retrieved_articles:
-        art_norm = normalize(art)
-        if law_n in art_norm and needle in art_norm:
-            return True
-    return False
+    """retrieved_articles 중 정답 조문이 있는지 확인 (정규화 후 완전 일치).
+
+    부분 문자열 비교는 두 방향으로 오탐한다: "제3조"⊂"제33조",
+    "산업안전보건법"⊂"산업안전보건법시행규칙". 라벨은 "{법령명} 제N조"
+    고정 포맷이므로 정규화 후 완전 일치로 비교한다.
+    """
+    expected = f"{normalize(law_name)}제{article_number.strip()}조"
+    return any(normalize(art) == expected for art in retrieved_articles)
 
 
-async def evaluate_single(question: str, law_name: str, article_number: str, k: int) -> Dict:
+async def evaluate_single(question: str, accepted: List[tuple], k: int) -> Dict:
+    """accepted: [(law_name, article_number), ...] — 하나라도 검색되면 정답.
+
+    넓은 실무 질문의 정답은 조문 집합일 수 있다 (인접 조문 분담: 도급 의무
+    제63조+제64조, 법→시행규칙 위임: 교육시간은 시행규칙 제26조). 골든셋의
+    accepted_articles 필드로 케이스별 인정 조문을 지정한다 — README #30.
+    """
     embedding = await get_embedding_async(question)
     results   = await search_qdrant_async(embedding, limit=k)
 
@@ -73,15 +77,12 @@ async def evaluate_single(question: str, law_name: str, article_number: str, k: 
         retrieved_articles.append(label)
         scores.append(r.get("score", 0.0))
 
-    top1_hit = (
-        article_matches(retrieved_articles[:1], law_name, article_number)
-        if retrieved_articles else False
-    )
-    top3_hit = (
-        article_matches(retrieved_articles[:3], law_name, article_number)
-        if retrieved_articles else False
-    )
-    topk_hit = article_matches(retrieved_articles, law_name, article_number)
+    def _hit(subset):
+        return any(article_matches(subset, law, art) for law, art in accepted)
+
+    top1_hit = _hit(retrieved_articles[:1]) if retrieved_articles else False
+    top3_hit = _hit(retrieved_articles[:3]) if retrieved_articles else False
+    topk_hit = _hit(retrieved_articles)
 
     return {
         "top1_hit":  top1_hit,
@@ -115,13 +116,13 @@ async def run_eval(sample: Optional[int] = None):
 
     for i, item in enumerate(dataset):
         q   = item["question"]
-        law = item["law_name"]
-        art = item["article_number"]
+        accepted = [(item["law_name"], item["article_number"])]
+        accepted += [(a["law"], a["article"]) for a in item.get("accepted_articles", [])]
         print(f"  [{i+1:02d}/{total}] {q[:50]}...")
 
         for k in TOP_K_VARIANTS:
             try:
-                res = await evaluate_single(q, law, art, k)
+                res = await evaluate_single(q, accepted, k)
                 all_results[k].append(res)
             except Exception as e:
                 print(f"         ❌ top-k={k} 오류: {e}")
