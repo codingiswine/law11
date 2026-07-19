@@ -129,7 +129,10 @@ async def run_tool(plan) -> AsyncGenerator[ToolChunk, None]:
             yield chunk
 
     except Exception as e:
-        yield ToolChunk(type="error", payload=f"❌ Tool 실행 중 오류: {str(e)}")
+        # ⚠️ 원문 예외를 그대로 내보내면 내부 정보(API 키 조각, 엔드포인트 등)가
+        # 사용자에게 노출된다 (장애 주입 실측: OpenAI 401 원문에 키 앞부분 포함,
+        # README #31). 사용자에겐 일반 메시지, 상세는 서버 로그로.
+        yield ToolChunk(type="error", payload="❌ 처리 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
         logger.error(f"[Tool 오류] {tool}: {e}")
         return
 
@@ -186,6 +189,11 @@ async def ask_law11(request: QueryRequest):
             # ✅ DB 저장
             final_tool_name = plan.tool.split("_")[0]
             full_answer = "".join(full_answer_parts)
+            # 답변이 비었으면(도구 실패 턴) 저장하지 않는다 — 빈 답변 행이
+            # 세션 컨텍스트와 대화 검색(db_query_tool)을 오염시킴 (장애 주입 실측, README #31)
+            if not full_answer.strip():
+                logger.warning("⚠️ 빈 답변 — chat_history 저장 스킵")
+                return
             try:
                 assistant_id = await save_chat_history(user_id, request.question, full_answer, final_tool_name, session_id=session_id)
                 await save_citations(assistant_id, pending_citations)
@@ -499,7 +507,7 @@ async def ask_law11_multi_agent(request: QueryRequest):
                 metrics_collector.record_error("/ask-multi", type(e).__name__)
                 metrics_collector.record_request("/ask-multi", selected_agent, "error")
                 logger.error(f"❌ [Multi-Agent 에러] {e}", exc_info=True)
-                yield f"data: {ToolChunk(type='error', payload=f'❌ Multi-Agent 처리 중 오류: {str(e)}').to_json()}\n\n"
+                yield f"data: {ToolChunk(type='error', payload='❌ 처리 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.').to_json()}\n\n"
 
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 

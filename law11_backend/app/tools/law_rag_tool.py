@@ -339,11 +339,20 @@ async def run(plan):
                 yield ToolChunk(type="status", payload="✅ 법령 검색 완료")
                 return
         except Exception as e:
-            yield ToolChunk(type="status", payload=f"⚠️ Qdrant 검색 실패: {e}")
+            print(f"⚠️ Qdrant 검색 실패: {e}")
+            yield ToolChunk(type="status", payload="⚠️ Qdrant 검색 실패 → 대체 경로 진행")
 
         # Qdrant에서 못 찾은 경우만 Web fallback
         yield ToolChunk(type="status", payload="⚠️ 관련 법령 없음 → Web 검색으로 보완")
         web_result = await summarize_web(query, context=context)
+        # ⚠️ 검색 결과가 하나도 없으면 GPT 생성 자체를 중단한다. 장애 주입 실측:
+        # 웹 소스(Tavily+Naver) 전멸 상태에서 "검색 결과 없음" 문구를 GPT에 넘기면
+        # "소화기는 100㎡당 1개" 같은 수치 기준을 근거 0에서 지어내 법적 근거
+        # 포맷으로 출력했다 (README #31). 법률 챗봇에서 근거 없는 확답은 오답보다 나쁘다.
+        if not web_result.get("raw_results"):
+            yield ToolChunk(type="text", payload="현재 웹 검색이 일시적으로 불가하여 관련 법령 정보를 확인할 수 없습니다. 잠시 후 다시 시도해 주시기 바랍니다.")
+            yield ToolChunk(type="status", payload="⚠️ 웹 검색 결과 없음 — 근거 없는 답변 생성 중단")
+            return
         web_summary = web_result.get("summaries", "")
         resp = await settings.openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -387,6 +396,7 @@ async def run(plan):
     text_val, enforcement_date = None, None
     selected_source: Optional[str] = None
     selected_articles: list = []
+    pg_error = False
     search_law_norm = normalize_law_name(law_name)
     search_article_norm = normalize_article(article_number)
 
@@ -410,16 +420,48 @@ async def run(plan):
             else:
                 yield ToolChunk(type="status", payload="🔍 [Qdrant] 벡터 검색으로 전환...")
     except Exception as e:
-        yield ToolChunk(type="status", payload=f"⚠️ [PostgreSQL] 오류 → Qdrant 검색: {e}")
+        pg_error = True
+        print(f"⚠️ [PostgreSQL] 조회 실패: {e}")
+        yield ToolChunk(type="status", payload="⚠️ [PostgreSQL] 오류 → 대체 경로 진행")
 
     # ③ Qdrant (2차: 벡터 유사도 검색)
     # 단, 조문 번호가 명시된 직접 조회(is_direct_article_query)에서 PG miss는
     # "해당 조문 없음"을 의미 — Qdrant로 다른 조문을 대신 꺼내지 않는다.
     if not text_val and is_direct_article_query:
-        msg = f"**{law_name} {article_display(article_number)}**는 데이터베이스에 존재하지 않습니다.\n\n조문 번호를 확인하시거나 법령명이 정확한지 검토해 주십시오."
-        yield ToolChunk(type="text", payload=msg)
-        yield ToolChunk(type="status", payload="✅ 조회 완료 (조문 없음)")
-        return
+        # ⚠️ PG "오류"와 "row 없음"을 반드시 구분한다. 장애 주입 실측: PG가 죽었을 때
+        # 이 분기가 "제17조는 데이터베이스에 존재하지 않습니다"라고 답했다 — 인프라
+        # 장애를 조문 부재로 오보하는 허위 응답 (README #31). 오류 시에는 Qdrant에
+        # 같은 조문이 norm 필터로 존재하므로 scroll 정확 조회로 대체하고, 그마저
+        # 실패하면 정직하게 일시 오류를 안내한다.
+        if pg_error:
+            try:
+                points, _ = await qdrant.scroll(
+                    COLLECTION,
+                    scroll_filter=Filter(must=[
+                        FieldCondition(key="law_name_norm", match=MatchValue(value=search_law_norm)),
+                        FieldCondition(key="article_number_norm", match=MatchValue(value=search_article_norm)),
+                    ]),
+                    limit=1,
+                    with_payload=True,
+                )
+                if points:
+                    p = points[0].payload
+                    text_val = p.get("text", "")
+                    enforcement_date = p.get("enforcement_date", "")
+                    selected_source = "qdrant"
+                    selected_articles = [f"{law_name} {article_display(article_number)}"]
+                    yield ToolChunk(type="status", payload="✅ [Qdrant] 대체 정확 조회 성공 (PG 장애)")
+            except Exception as e2:
+                print(f"⚠️ [Qdrant] 대체 조회도 실패: {e2}")
+            if not text_val:
+                yield ToolChunk(type="text", payload="일시적인 데이터베이스 오류로 조문을 조회하지 못했습니다. 잠시 후 다시 시도해 주시기 바랍니다.")
+                yield ToolChunk(type="status", payload="⚠️ 조회 실패 (일시적 DB 오류)")
+                return
+        else:
+            msg = f"**{law_name} {article_display(article_number)}**는 데이터베이스에 존재하지 않습니다.\n\n조문 번호를 확인하시거나 법령명이 정확한지 검토해 주십시오."
+            yield ToolChunk(type="text", payload=msg)
+            yield ToolChunk(type="status", payload="✅ 조회 완료 (조문 없음)")
+            return
 
     if not text_val:
         yield ToolChunk(type="status", payload="🧠 [Qdrant] 벡터 검색 중...")
@@ -452,12 +494,21 @@ async def run(plan):
                 selected_articles = [f"{r_law} {article_display(r_art)}" if r_art else r_law]
                 yield ToolChunk(type="status", payload=f"✅ [Qdrant] 유사도 {best.score:.2f} 조문 발견")
         except Exception as e:
-            yield ToolChunk(type="status", payload=f"⚠️ Qdrant 검색 실패: {e}")
+            print(f"⚠️ Qdrant 검색 실패: {e}")
+            yield ToolChunk(type="status", payload="⚠️ Qdrant 검색 실패 → 대체 경로 진행")
 
     # ④ Web fallback (모든 조문 검색 실패)
     if not text_val or not isinstance(text_val, str) or not text_val.strip():
         yield ToolChunk(type="status", payload="⚠️ 조문 없음 → Web fallback 실행")
         web_result = await summarize_web(query, context=context)
+        # ⚠️ 검색 결과가 하나도 없으면 GPT 생성 자체를 중단한다. 장애 주입 실측:
+        # 웹 소스(Tavily+Naver) 전멸 상태에서 "검색 결과 없음" 문구를 GPT에 넘기면
+        # "소화기는 100㎡당 1개" 같은 수치 기준을 근거 0에서 지어내 법적 근거
+        # 포맷으로 출력했다 (README #31). 법률 챗봇에서 근거 없는 확답은 오답보다 나쁘다.
+        if not web_result.get("raw_results"):
+            yield ToolChunk(type="text", payload="현재 웹 검색이 일시적으로 불가하여 관련 법령 정보를 확인할 수 없습니다. 잠시 후 다시 시도해 주시기 바랍니다.")
+            yield ToolChunk(type="status", payload="⚠️ 웹 검색 결과 없음 — 근거 없는 답변 생성 중단")
+            return
         web_summary = web_result.get("summaries", "")
         resp = await settings.openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -588,7 +639,8 @@ async def run(plan):
         })
 
     except Exception as e:
-        yield ToolChunk(type="error", payload=f"❌ GPT 요약 실패: {e}")
+        print(f"⚠️ GPT 요약 실패: {e}")
+        yield ToolChunk(type="error", payload="❌ 답변 생성 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
 
     yield ToolChunk(type="status", payload="✅ 법령 검색 완료")
 
