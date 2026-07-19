@@ -33,6 +33,7 @@ sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.config import settings
 from app.services.rag_service import get_embedding_async, search_qdrant_async
+from app.tools.law_rag_tool import expand_legal_terms
 
 EVAL_DIR    = Path(__file__).parent
 RESULTS_DIR = EVAL_DIR / "results"
@@ -64,7 +65,7 @@ async def evaluate_single(question: str, accepted: List[tuple], k: int) -> Dict:
     제63조+제64조, 법→시행규칙 위임: 교육시간은 시행규칙 제26조). 골든셋의
     accepted_articles 필드로 케이스별 인정 조문을 지정한다 — README #30.
     """
-    embedding = await get_embedding_async(question)
+    embedding = await get_embedding_async(expand_legal_terms(question))
     results   = await search_qdrant_async(embedding, limit=k)
 
     retrieved_articles = []

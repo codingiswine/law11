@@ -29,6 +29,7 @@ from app.config import settings
 from app.services.rag_service import get_embedding_async, search_qdrant_async
 from app.tools.law_rag_tool import (
     article_display,
+    expand_legal_terms,
     detect_law_name,
     get_priority_law,
     normalize_law_name,
@@ -89,7 +90,7 @@ async def retrieve_and_generate(
     # 임베딩 생성 (SQLite 캐시 활용) 후 Qdrant 의미 검색.
     # 프로덕션과 동일하게, 우선 법령 필터 결과가 부실하면(top score < 0.45)
     # 전체 법령으로 재검색한다.
-    embedding = await get_embedding_async(question)
+    embedding = await get_embedding_async(expand_legal_terms(question))
     priority_law = get_priority_law(question)
     qdrant_results = await search_qdrant_async(embedding, limit=limit, law_name_norm=priority_law)
     if priority_law and (not qdrant_results or qdrant_results[0]["score"] < 0.45):

@@ -56,3 +56,16 @@ def test_normalize_article_plain_number():
 def test_article_display():
     assert law_rag_tool.article_display("14의2") == "제14조의2"
     assert law_rag_tool.article_display("17") == "제17조"
+
+
+def test_expand_legal_terms_maps_statutory_term():
+    """용어 매핑 회귀 테스트: "폭발 위험 분위기"는 규칙 공식 용어 "폭발위험장소"와
+    어긋나 발파 조문이 검색되던 케이스 (실측 제230조 4위→1위, README #33)"""
+    out = law_rag_tool.expand_legal_terms("폭발 위험 분위기에서의 작업 기준은?")
+    assert "폭발위험장소" in out
+    assert out.startswith("폭발 위험 분위기")
+
+
+def test_expand_legal_terms_noop_without_trigger():
+    q = "안전관리자 선임 기준은?"
+    assert law_rag_tool.expand_legal_terms(q) == q
