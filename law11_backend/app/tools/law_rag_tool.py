@@ -24,16 +24,34 @@ def _extract_web_citations(answer: str) -> list:
     안 뜸 — 사용자가 답변 내용을 검증할 방법이 없었음). 대괄호/볼드 둘 다
     매치하도록 확장.
     """
+    # GPT가 쓰는 인용 표기 변형들 (전부 실측으로 발견된 형태만):
+    #   ① "[법령명] 제X조" — 프롬프트가 요청한 기본 형태
+    #   ② "**법령명** 제X조" — 볼드 변형 (#12)
+    #   ③ "[법령명 제X조]" — 조문 번호까지 대괄호 안에 넣는 변형 (#34, 실측:
+    #      "[소방시설 설치 및 관리에 관한 법률 제8조]"가 매치 안 돼 배지 미표시)
+    patterns = [
+        r'(?:\[([^\]]{2,30}?)\]|\*\*([^\*\n]{2,30}?)\*\*)\s*제(\d+(?:의\d+)?)조',
+        r'\[([^\]]{2,30}?)\s*제(\d+(?:의\d+)?)조[^\]]{0,12}\]',
+    ]
+    matches = []
+    for pi, pattern in enumerate(patterns):
+        for m in re.finditer(pattern, answer):
+            if pi == 0:
+                law_name, article = (m.group(1) or m.group(2)).strip(), m.group(3)
+            else:
+                law_name, article = m.group(1).strip(), m.group(2)
+            matches.append((m.start(), law_name, article))
+
     citations = []
     seen = set()
-    pattern = r'(?:\[([^\]]{2,30}?)\]|\*\*([^\*\n]{2,30}?)\*\*)\s*제(\d+(?:의\d+)?)조'
-    for rank, m in enumerate(re.finditer(pattern, answer), start=1):
-        law_name = (m.group(1) or m.group(2)).strip()
-        article = m.group(3)
+    for _, law_name, article in sorted(matches):
         key = f"{law_name}:{article}"
         if key not in seen:
             seen.add(key)
-            citations.append({"law_name": law_name, "article_number": article, "score": None, "rank": rank})
+            citations.append({
+                "law_name": law_name, "article_number": article,
+                "score": None, "rank": len(citations) + 1,
+            })
         if len(citations) >= 5:
             break
     return citations
