@@ -67,7 +67,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 할루시네이션 안전율 | **96.7%** (LLM-judge 30케이스 · Citation 누락 0건) |
 | 라우터 정확도 | **32/32 (100%)** (키워드 fast-path + LLM 하이브리드) |
 | 멀티턴 회귀 eval | 시나리오 5개 — 전부 **mutation test**(fix 되돌리기)로 회귀 감지력 검증 |
-| 자동화 테스트 / CI | pytest 46개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
+| 자동화 테스트 / CI | pytest 58개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 (설계 목표 10명의 2배) |
 | 장애 주입 테스트 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 — 결함 4건 발견·수정 (#31) |
 | 문서화된 발견-수정 사이클 | changelog 25건 (증상 → 근본 원인 → 실측 검증 형식) |
