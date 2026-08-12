@@ -443,6 +443,7 @@ async def dashboard():
 async def ask_law11_multi_agent(request: QueryRequest):
     """LangGraph Multi-Agent 시스템을 활용한 질문 응답 (메트릭 수집 포함)"""
     user_id = "law11_user"
+    session_id = request.session_id
     logger.info(f"🤖 [Multi-Agent] 요청 수신: {request.question}")
 
     try:
@@ -462,7 +463,7 @@ async def ask_law11_multi_agent(request: QueryRequest):
             selected_agent = "unknown"
             try:
                 # Multi-Agent 실행
-                final_state = await run_multi_agent(user_id, request.question)
+                final_state = await run_multi_agent(user_id, request.question, session_id)
 
                 # 답변을 chunk로 나눠서 스트리밍
                 answer = final_state.get("final_answer", "")
@@ -490,7 +491,7 @@ async def ask_law11_multi_agent(request: QueryRequest):
                 tool_name = final_state.get("selected_tool", "").split("_")[0]
 
                 try:
-                    await save_chat_history(user_id, request.question, full_answer, tool_name)
+                    await save_chat_history(user_id, request.question, full_answer, tool_name, session_id=session_id)
                     yield f"data: {json.dumps({'event': 'status', 'payload': '✅ Multi-Agent 처리 완료'})}\n\n"
                 except Exception as e:
                     logger.error(f"⚠️ [DB 저장 실패] {e}")

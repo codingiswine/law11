@@ -1,11 +1,11 @@
 # Law11 — Korean Occupational Safety Law RAG Chatbot
 
-> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (33 documented find-fix cycles).
+> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (35 documented find-fix cycles).
 
 [![CI](https://github.com/codingiswine/law11/actions/workflows/ci.yml/badge.svg)](https://github.com/codingiswine/law11/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
-[![Version](https://img.shields.io/badge/Version-1.7.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.7.2-orange.svg)]()
 
 A domain-specialized RAG system over **9 Korean occupational-safety laws (1,629 articles)**. Started as a PoC for a Seoul district office's disaster-safety team, rebuilt as an independent project with a measurement-first engineering process.
 

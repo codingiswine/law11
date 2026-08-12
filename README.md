@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.7.1-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.7.2-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -70,7 +70,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 자동화 테스트 / CI | pytest 58개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 (설계 목표 10명의 2배) |
 | 장애 주입 테스트 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 — 결함 4건 발견·수정 (#31) |
-| 문서화된 발견-수정 사이클 | changelog 25건 (증상 → 근본 원인 → 실측 검증 형식) |
+| 문서화된 발견-수정 사이클 | changelog 35건 (증상 → 근본 원인 → 실측 검증 형식) |
 
 **시스템 개요**:
 
@@ -965,6 +965,18 @@ cd law11_backend && python -m eval.eval_multiturn
 **수정**: 대괄호 내부형 패턴 추가. 복수 패턴의 매치를 **등장 위치 기준으로 병합·정렬**해 형식이 섞여도 rank가 실제 인용 순서를 따르도록 재구성.
 
 **검증**: 사용자 답변 원문으로 추출 0건 재현 → 수정 후 동일 질문 라이브 재현에서 배지 2건("소방시설 설치 및 관리에 관한 법률 제8조", "동 시행령 제5조") 정상 발행. 세 형식 혼합 시 순서 보존 회귀 테스트 2개 추가, pytest 56개 통과 (기존 형식 회귀 없음).
+
+---
+
+### 35. db_query_tool_async 세션 격리 — 전역 chat_history 검색의 크로스유저 유출 차단 `v1.7.2`
+
+**문제** (#21 관찰의 해소): `db_query_tool_async`의 키워드 검색·최근 대화 폴백 SQL 모두 `WHERE u.role = 'user'`뿐, 세션/유저 경계가 없어 chat_history **전체**를 검색했습니다. 단일 사용자 구조에선 무해하지만 초대 데모부터는 다른 사용자의 대화가 "기록에서 확인해줘" 한 마디에 노출되는 유출입니다. user_id는 필터 키로 쓸 수 없음 — routes.py가 `"law11_user"`로 하드코딩해 모든 행이 같은 값이라, 실질 경계는 session_id뿐.
+
+**수정**: 두 SQL의 WHERE에 `u.session_id = :session_id` 추가 (라우터 `_load_session_context`의 기존 세션 스코프 패턴 미러링, self-join이 `a.session_id = u.session_id`라 u쪽만 필터하면 충분). session_id를 라우터 `_plan()` args와 LangGraph `AgentState`/`run_multi_agent()` 양 경로로 관통시키고, 미전달 시 `save_chat_history`와 동일한 `"law11_session"` 기본값으로 스코프. 부수 수정: `/ask-multi`가 저장 시 `session_id`를 누락해 항상 `"law11_session"`으로 저장하던 것을 요청의 session_id로 정정 (안 고치면 multi 경로는 쓰는 세션과 읽는 세션이 어긋남). **동작 변경**: DB 회상은 이제 세션 단위 — 새 세션에서 "기록에서"는 과거 세션 대화를 보지 않습니다 (의도된 격리 시맨틱). `eval_multiturn.purge_eval_sessions()`는 오염 방지 근거가 사라졌지만 eval 행 누적 방지 위생으로 유지.
+
+**코드 리뷰(8관점 병렬)로 발견 후 즉시 수정**: (1) 프론트엔드 `sessionId`가 `crypto.randomUUID()`로만 생성되고 저장되지 않아, 세션 격리 도입 이후 새로고침·재방문마다 새 세션으로 취급돼 직전 대화 회상이 매번 끊기는 회귀가 있었습니다. `localStorage("law11_session_id")`에 영속화하도록 수정 (App.tsx) — 새로고침 후에도 같은 세션으로 유지되며 회상이 정상 동작함을 라이브로 확인. (2) LangGraph `/ask-multi` 경로의 `router_node`가 `_detect_tool` 호출 시 session_id를 누락해, 세션 히스토리 없이 후속 질문을 분류하고 있었습니다 (`/api/ask`는 정상 전달 중이라 두 경로가 비대칭이었음). `state.get("session_id")`를 넘기도록 수정하고 회귀 테스트(`test_router_node.py`) 추가.
+
+**검증**: session_id 바인드 파라미터 단언 회귀 테스트 추가 (기본 세션 2건 + 명시 세션 1건 신규) + router_node 세션 전달 회귀 테스트 1건, pytest 58개 통과. 프론트엔드 `tsc -b --noEmit` 통과. 멀티턴 eval 5/5 (MT-001이 이제 세션 필터를 실제로 통과하며 검증), harness smoke 무회귀. 라이브 재현 3종: (a) session A 법령 질문 저장 → session B "기록에서 확인해줘" 시 A의 행 미노출, A 내 재질의 시 정상 회상, (b) 실제 Vite 개발 서버에서 법령 질문 후 새로고침 → localStorage 세션 유지로 "기록에서" 회상 정상 동작, (c) `/ask-multi`로 동일 시나리오 재현 시 세션 스코프 저장·회상 정상.
 
 ---
 
