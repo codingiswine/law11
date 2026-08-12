@@ -1,4 +1,4 @@
-from typing import List, TypedDict
+from typing import List, Optional, TypedDict
 
 from langgraph.graph import StateGraph, END
 
@@ -20,6 +20,7 @@ class AgentState(TypedDict):
     """그래프 전체에서 공유되는 상태. 노드는 이 dict를 수정하지 않고 새 dict를 반환한다."""
     question: str
     user_id: str
+    session_id: str
     selected_tool: str
     answer_chunks: List[str]
     final_answer: str
@@ -31,7 +32,7 @@ class AgentState(TypedDict):
 async def router_node(state: AgentState) -> AgentState:
     """question_router로 tool을 선택하고 selected_tool에 저장한다."""
     logger.info(f"🔀 [Router] 질문 분석: {state['question']}")
-    plan: ToolPlan = await _detect_tool(state["user_id"], state["question"])
+    plan: ToolPlan = await _detect_tool(state["user_id"], state["question"], state.get("session_id"))
     logger.info(f"🎯 [Router] 선택된 Tool: {plan.tool}")
     return {**state, "selected_tool": plan.tool, "metadata": {"plan": plan.summary()}}
 
@@ -63,7 +64,7 @@ def _make_tool_node(tool_module, tool_name: str, label: str):
     """
     async def _node(state: AgentState) -> AgentState:
         logger.info(f"{label} 시작")
-        plan = ToolPlan(tool=tool_name, args={"query": state["question"]})
+        plan = ToolPlan(tool=tool_name, args={"query": state["question"], "session_id": state.get("session_id", "")})
         chunks = [c.payload async for c in tool_module.run(plan) if c.type == "text"]
         logger.info(f"{label} 완료")
         return {**state, "answer_chunks": chunks, "final_answer": "".join(chunks)}
@@ -130,12 +131,13 @@ logger.info("✅ [LangGraph] Multi-Agent Graph 생성 완료")
 
 # ── 공개 API ─────────────────────────────────────────────────────────
 
-async def run_multi_agent(user_id: str, question: str) -> AgentState:
+async def run_multi_agent(user_id: str, question: str, session_id: Optional[str] = None) -> AgentState:
     """Multi-Agent 그래프를 실행하고 최종 state를 반환한다."""
     logger.info(f"🚀 [Multi-Agent] 시작: {question}")
     final_state = await _graph.ainvoke(AgentState(
         question=question,
         user_id=user_id,
+        session_id=session_id or "",
         selected_tool="",
         answer_chunks=[],
         final_answer="",

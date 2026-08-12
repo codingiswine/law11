@@ -9,7 +9,13 @@ import type { Message, LawReference, LawSource } from "./types";
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
-  const [sessionId, setSessionId] = useState<string>(() => crypto.randomUUID());
+  const [sessionId, setSessionId] = useState<string>(() => {
+    const saved = localStorage.getItem("law11_session_id");
+    if (saved) return saved;
+    const id = crypto.randomUUID();
+    localStorage.setItem("law11_session_id", id);
+    return id;
+  });
   const [selectedLaw, setSelectedLaw] = useState<{ name: string; article: string } | null>(null);
   const [historyVersion, setHistoryVersion] = useState(0);
 
@@ -20,7 +26,9 @@ function App() {
   };
 
   const handleNewSession = () => {
-    setSessionId(crypto.randomUUID());
+    const id = crypto.randomUUID();
+    localStorage.setItem("law11_session_id", id);
+    setSessionId(id);
     setMessages([]);
     setActiveQuestion(null);
     setSelectedLaw(null);
@@ -30,6 +38,7 @@ function App() {
     const loaded = await getSession(sid);
     if (loaded.length > 0) {
       setMessages(loaded);
+      localStorage.setItem("law11_session_id", sid);
       setSessionId(sid);
       setActiveQuestion(null);
       setSelectedLaw(null);

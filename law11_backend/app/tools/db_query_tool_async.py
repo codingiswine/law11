@@ -9,7 +9,7 @@ db_query_tool_async.py (v3.3, Stable Async)
 
 import asyncio
 from sqlalchemy import text
-from typing import List, Dict, AsyncGenerator
+from typing import List, Dict, Optional, AsyncGenerator
 from core.stream import ToolChunk
 from app.services.question_router import _DB_KEYWORDS
 try:
@@ -38,12 +38,14 @@ def _extract_search_term(query: str) -> str:
     return term.strip()
 
 
+# ⚠️ session_id 필터는 크로스유저 대화 유출 차단용 (README #21 관찰) —
+# self-join이 a.session_id = u.session_id이므로 u쪽만 필터하면 양쪽 다 잠긴다.
 _RECENT_HISTORY_SQL = text("""
     SELECT u.content AS question, a.content AS answer, u.created_at
     FROM chat_history u
     JOIN chat_history a
       ON a.session_id = u.session_id AND a.turn_index = u.turn_index + 1 AND a.role = 'assistant'
-    WHERE u.role = 'user'
+    WHERE u.role = 'user' AND u.session_id = :session_id
     ORDER BY u.created_at DESC
     LIMIT 5
 """)
@@ -53,13 +55,13 @@ _KEYWORD_SEARCH_SQL = text("""
     FROM chat_history u
     JOIN chat_history a
       ON a.session_id = u.session_id AND a.turn_index = u.turn_index + 1 AND a.role = 'assistant'
-    WHERE u.role = 'user' AND u.content ILIKE :kw
+    WHERE u.role = 'user' AND u.content ILIKE :kw AND u.session_id = :session_id
     ORDER BY u.created_at DESC
     LIMIT 5
 """)
 
 
-async def run_db_query_tool(query: str) -> List[Dict]:
+async def run_db_query_tool(query: str, session_id: Optional[str] = None) -> List[Dict]:
     """PostgreSQL chat_history에서 이전 대화 기록 검색 (비동기).
 
     chat_history는 user/assistant 메시지를 별도 행(role, content)으로 저장하고
@@ -74,16 +76,22 @@ async def run_db_query_tool(query: str) -> List[Dict]:
     검색이 실제로 0건이면 최근 대화를 그대로 보여주는 폴백으로 일반화한다.
     """
     search_term = _extract_search_term(query)
+    # session_id 미전달 시 save_chat_history와 같은 기본값을 써야
+    # 세션 없이 호출한 API 사용자도 자기 행을 찾는다 (routes.py 참고).
+    effective_session = session_id or "law11_session"
 
     try:
         async with settings.async_engine.connect() as conn:
             if search_term:
-                rows = await conn.execute(_KEYWORD_SEARCH_SQL, {"kw": f"%{search_term}%"})
+                rows = await conn.execute(
+                    _KEYWORD_SEARCH_SQL,
+                    {"kw": f"%{search_term}%", "session_id": effective_session},
+                )
                 results = rows.fetchall()
                 if results:
                     return [dict(r._mapping) for r in results]
 
-            rows = await conn.execute(_RECENT_HISTORY_SQL)
+            rows = await conn.execute(_RECENT_HISTORY_SQL, {"session_id": effective_session})
             return [dict(r._mapping) for r in rows.fetchall()]
     except Exception as e:
         print(f"❌ [DB] 쿼리 실행 실패: {e}")
@@ -105,7 +113,7 @@ async def run(plan) -> AsyncGenerator[ToolChunk, None]:
     yield ToolChunk(type="status", payload=f"🧠 '{query}' 관련 DB 검색 중...")
 
     try:
-        results = await run_db_query_tool(query)
+        results = await run_db_query_tool(query, plan.args.get("session_id"))
     except Exception as e:
         yield ToolChunk(type="error", payload=f"⚠️ DB 쿼리 실행 중 오류: {str(e)}")
         return

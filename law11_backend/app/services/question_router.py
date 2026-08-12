@@ -112,7 +112,7 @@ async def detect_tool(user_id: str, text: str, session_id: Optional[str] = None)
     raw_q_lower  = text.lower()
 
     def _plan(tool: str) -> ToolPlan:
-        return ToolPlan(tool=tool, args={"query": text, "context": history})
+        return ToolPlan(tool=tool, args={"query": text, "context": history, "session_id": session_id})
 
     if any(k in raw_q_lower for k in _FOREIGN_KEYWORDS):
         logger.info("🌐 [Router] 외국 법령/기관 → WEBSEARCH_TOOL (fast)")

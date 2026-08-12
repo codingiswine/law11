@@ -53,6 +53,9 @@ async def test_run_db_query_tool_falls_back_to_recent_history_when_keyword_searc
 
     assert conn.execute.call_count == 2
     assert results == [{"question": "비계 설치 안전 기준 알려줘", "answer": "...", "created_at": "2026-07-16"}]
+    # session_id 미전달 시 save_chat_history와 같은 기본 세션으로 스코프되어야 함
+    assert conn.execute.call_args_list[0].args[1]["session_id"] == "law11_session"
+    assert conn.execute.call_args_list[1].args[1]["session_id"] == "law11_session"
 
 
 @pytest.mark.asyncio
@@ -69,3 +72,20 @@ async def test_run_db_query_tool_uses_keyword_match_when_found():
 
     assert conn.execute.call_count == 1
     assert results == [{"question": "비계 기록에서 확인해줘", "answer": "...", "created_at": "2026-07-16"}]
+    assert conn.execute.call_args.args[1]["session_id"] == "law11_session"
+
+
+@pytest.mark.asyncio
+async def test_run_db_query_tool_scopes_to_given_session():
+    """세션 격리 회귀 잠금 (README #21 관찰): 전달된 session_id가 그대로
+    바인드 파라미터에 실려야 다른 세션의 대화가 검색될 수 없다."""
+    matched_row = MagicMock()
+    matched_row._mapping = {"question": "비계 기록에서 확인해줘", "answer": "...", "created_at": "2026-07-16"}
+
+    engine, conn = _mock_engine([_fake_result([matched_row])])
+
+    with patch("app.tools.db_query_tool_async.settings") as mock_settings:
+        mock_settings.async_engine = engine
+        await run_db_query_tool("비계 기록에서 확인해줘", session_id="sess-A")
+
+    assert conn.execute.call_args.args[1]["session_id"] == "sess-A"

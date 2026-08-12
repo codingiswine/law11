@@ -130,9 +130,10 @@ async def last_tool(session_id: str) -> str:
 async def purge_eval_sessions() -> None:
     """이전 실행이 남긴 eval 세션 제거.
 
-    db_query_tool_async의 키워드 검색은 세션 필터 없이 전역이라, 과거 eval
-    실행이 남긴 동일 질문 행("그거가 정확히 뭐였는지 다시 말해줘")이 그대로
-    매치돼 MT-001이 영원히 통과하는 오염이 생긴다 (revert 검증에서 실측).
+    v1.7.2부터 db_query_tool_async가 session_id로 스코프되어 과거 eval 행이
+    MT-001에 매치되는 오염(revert 검증에서 실측)은 구조적으로 불가능해졌지만,
+    eval 행이 chat_history에 무한 누적되는 것을 막는 위생 + 필터 회귀 시
+    방어선으로 유지한다.
     """
     sql = text("DELETE FROM chat_history WHERE session_id LIKE 'eval-mt-%'")
     async with settings.async_engine.begin() as conn:
