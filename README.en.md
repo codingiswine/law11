@@ -40,6 +40,10 @@ The changelog documents 33 find-fix cycles in "symptom → root cause → measur
 
 ## Architecture
 
+<div align="center">
+  <img src="assets/architecture.svg" alt="Law11 full architecture" width="900">
+</div>
+
 ```
 POST /api/ask
   → question_router  (keyword fast-path → LLM classification, session-aware)

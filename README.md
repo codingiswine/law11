@@ -84,6 +84,10 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 
 ## 시스템 아키텍처
 
+<div align="center">
+  <img src="assets/architecture.svg" alt="Law11 전체 아키텍처" width="900">
+</div>
+
 ```
 사용자 질문
     │
