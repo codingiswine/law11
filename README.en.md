@@ -41,7 +41,7 @@ The changelog documents 33 find-fix cycles in "symptom → root cause → measur
 ## Architecture
 
 <div align="center">
-  <img src="assets/architecture.svg" alt="Law11 full architecture" width="900">
+  <img src="assets/architecture_en.svg" alt="Law11 full architecture" width="900">
 </div>
 
 ```
