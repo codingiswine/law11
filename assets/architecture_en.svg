@@ -1,0 +1,127 @@
+<svg width="1400" height="980" viewBox="0 0 1400 980" xmlns="http://www.w3.org/2000/svg" font-family="'Inter','Helvetica Neue',Arial,sans-serif">
+  <defs>
+    <marker id="a1" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#64748b"/>
+    </marker>
+    <marker id="a2" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="a3" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#9333ea"/>
+    </marker>
+  </defs>
+
+  <rect width="1400" height="980" fill="#ffffff"/>
+  <text x="700" y="38" text-anchor="middle" font-size="22" font-weight="700" fill="#0f172a">Law11 — Full Architecture</text>
+
+  <!-- Client -->
+  <rect x="580" y="65" width="240" height="55" rx="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.6"/>
+  <text x="700" y="98" text-anchor="middle" font-size="14.5" font-weight="600" fill="#0f172a">Client — React + TypeScript (SSE)</text>
+
+  <!-- FastAPI backend outer box -->
+  <rect x="60" y="150" width="1280" height="430" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="90" y="180" font-size="15" font-weight="700" fill="#334155">FastAPI Backend</text>
+
+  <line x1="700" y1="120" x2="700" y2="150" stroke="#64748b" stroke-width="1.8" marker-end="url(#a1)"/>
+
+  <!-- question_router -->
+  <rect x="600" y="195" width="200" height="55" rx="8" fill="#ffffff" stroke="#334155" stroke-width="1.6"/>
+  <text x="700" y="219" text-anchor="middle" font-size="13.5" font-weight="600" fill="#0f172a">question_router</text>
+  <text x="700" y="237" text-anchor="middle" font-size="11" fill="#64748b">detect_tool() → ToolPlan</text>
+
+  <!-- Main path label -->
+  <rect x="100" y="270" width="150" height="26" rx="5" fill="#dbeafe"/>
+  <text x="175" y="288" text-anchor="middle" font-size="12" font-weight="700" fill="#1d4ed8">Main path — /api/ask</text>
+
+  <!-- law_rag_tool 3-tier box -->
+  <rect x="100" y="310" width="480" height="230" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.6"/>
+  <text x="120" y="335" font-size="13.5" font-weight="700" fill="#1e40af">law_rag_tool — 3-tier search</text>
+
+  <rect x="120" y="350" width="440" height="46" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.3"/>
+  <text x="340" y="378" text-anchor="middle" font-size="12.5" fill="#0f172a">① PostgreSQL exact match (law name + article no.)</text>
+
+  <line x1="340" y1="396" x2="340" y2="410" stroke="#2563eb" stroke-width="1.5" marker-end="url(#a2)"/>
+  <text x="450" y="405" font-size="10.5" fill="#64748b">on miss ↓</text>
+
+  <rect x="120" y="410" width="440" height="46" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.3"/>
+  <text x="340" y="438" text-anchor="middle" font-size="12.5" fill="#0f172a">② Qdrant vector search (threshold 0.45 / 0.5)</text>
+
+  <line x1="340" y1="456" x2="340" y2="470" stroke="#2563eb" stroke-width="1.5" marker-end="url(#a2)"/>
+  <text x="450" y="465" font-size="10.5" fill="#64748b">on miss ↓</text>
+
+  <rect x="120" y="470" width="440" height="46" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1.3"/>
+  <text x="340" y="498" text-anchor="middle" font-size="12.5" fill="#0f172a">③ Web search fallback (Tavily / Naver)</text>
+
+  <!-- other tools -->
+  <rect x="620" y="310" width="220" height="230" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.4"/>
+  <text x="730" y="335" text-anchor="middle" font-size="13" font-weight="700" fill="#334155">Other tools</text>
+  <text x="640" y="365" font-size="12" fill="#334155">· db_query_tool_async</text>
+  <text x="640" y="390" font-size="12" fill="#334155">  (session_id scoped)</text>
+  <text x="640" y="415" font-size="12" fill="#334155">· news_tool</text>
+  <text x="640" y="440" font-size="12" fill="#334155">· blog_tool</text>
+  <text x="640" y="465" font-size="12" fill="#334155">· websearch_tool</text>
+  <text x="640" y="490" font-size="12" fill="#334155">· general_tool</text>
+
+  <line x1="700" y1="250" x2="340" y2="310" stroke="#2563eb" stroke-width="1.6" marker-end="url(#a2)"/>
+  <line x1="700" y1="250" x2="730" y2="310" stroke="#64748b" stroke-width="1.5" marker-end="url(#a1)"/>
+
+  <!-- experimental path -->
+  <rect x="880" y="270" width="240" height="26" rx="5" fill="#f3e8ff"/>
+  <text x="1000" y="288" text-anchor="middle" font-size="12" font-weight="700" fill="#7e22ce">Experimental path — /api/ask-multi</text>
+
+  <rect x="880" y="310" width="440" height="230" rx="10" fill="#faf5ff" stroke="#9333ea" stroke-width="1.6" stroke-dasharray="5,3"/>
+  <text x="900" y="335" font-size="13.5" font-weight="700" fill="#6b21a8">LangGraph multi-agent (experimental)</text>
+
+  <rect x="900" y="350" width="400" height="42" rx="6" fill="#ffffff" stroke="#d8b4fe" stroke-width="1.3"/>
+  <text x="1100" y="376" text-anchor="middle" font-size="12" fill="#0f172a">router → law/news/blog/db/web/general agent</text>
+
+  <line x1="1100" y1="392" x2="1100" y2="406" stroke="#9333ea" stroke-width="1.5" marker-end="url(#a3)"/>
+
+  <rect x="900" y="406" width="400" height="115" rx="6" fill="#ffffff" stroke="#d8b4fe" stroke-width="1.3"/>
+  <text x="1100" y="428" text-anchor="middle" font-size="12.5" font-weight="600" fill="#0f172a">Self-RAG subgraph</text>
+  <text x="920" y="450" font-size="11.5" fill="#475569">retrieve → grade_hallucination</text>
+  <text x="920" y="470" font-size="11.5" fill="#475569">→ grade_relevance → (on fail) web fallback</text>
+  <text x="920" y="497" font-size="11" fill="#7e22ce" font-weight="600">※ Not applied to the main /api/ask path</text>
+
+  <line x1="700" y1="250" x2="1100" y2="310" stroke="#9333ea" stroke-width="1.6" stroke-dasharray="5,3" marker-end="url(#a3)"/>
+
+  <!-- Data layer -->
+  <text x="90" y="640" font-size="15" font-weight="700" fill="#334155">Data &amp; external layer</text>
+
+  <rect x="100" y="660" width="200" height="60" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.6"/>
+  <text x="200" y="686" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">PostgreSQL</text>
+  <text x="200" y="704" text-anchor="middle" font-size="11" fill="#64748b">law_chunks · chat_history</text>
+
+  <rect x="330" y="660" width="200" height="60" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.6"/>
+  <text x="430" y="686" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">Qdrant</text>
+  <text x="430" y="704" text-anchor="middle" font-size="11" fill="#64748b">laws collection (vector)</text>
+
+  <rect x="560" y="660" width="200" height="60" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="660" y="686" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">OpenAI API</text>
+  <text x="660" y="704" text-anchor="middle" font-size="11" fill="#64748b">GPT-4o mini</text>
+
+  <rect x="790" y="660" width="200" height="60" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="890" y="686" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">Tavily / Naver</text>
+  <text x="890" y="704" text-anchor="middle" font-size="11" fill="#64748b">Web search (semaphore-limited)</text>
+
+  <line x1="200" y1="540" x2="200" y2="660" stroke="#64748b" stroke-width="1.5" marker-end="url(#a1)"/>
+  <line x1="430" y1="540" x2="430" y2="660" stroke="#64748b" stroke-width="1.5" marker-end="url(#a1)"/>
+  <line x1="660" y1="540" x2="660" y2="660" stroke="#64748b" stroke-width="1.5" marker-end="url(#a1)"/>
+  <line x1="890" y1="540" x2="890" y2="660" stroke="#64748b" stroke-width="1.5" marker-end="url(#a1)"/>
+
+  <!-- Supporting infra -->
+  <rect x="1020" y="660" width="320" height="60" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="1180" y="686" text-anchor="middle" font-size="13" font-weight="600" fill="#78350f">APScheduler</text>
+  <text x="1180" y="704" text-anchor="middle" font-size="11" fill="#92400e">Weekly Mon 3AM auto law update</text>
+
+  <!-- Monitoring -->
+  <rect x="1020" y="740" width="320" height="60" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
+  <text x="1180" y="766" text-anchor="middle" font-size="13" font-weight="600" fill="#78350f">Prometheus</text>
+  <text x="1180" y="784" text-anchor="middle" font-size="10.5" fill="#92400e">Request count · latency · error rate metrics</text>
+
+  <!-- CI/eval -->
+  <rect x="60" y="800" width="1280" height="90" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="90" y="828" font-size="14" font-weight="700" fill="#14532d">Verification pipeline (runs automatically on every commit)</text>
+  <text x="90" y="855" font-size="12" fill="#166534">GitHub Actions CI → 58 pytest tests · RAGAS regression harness (fails on 5% drop) · multi-turn regression eval · load test (20 concurrent, zero failures) · fault-injection test (5 dependencies)</text>
+  <text x="90" y="876" font-size="12" fill="#166534">→ 35 changelog entries; 21 genuine defects root-caused and fixed</text>
+</svg>
