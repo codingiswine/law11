@@ -10,9 +10,9 @@ export async function submitFeedback(messageId: number, value: 1 | -1): Promise<
   });
 }
 
-export async function getLawContent(name: string, article: string = ""): Promise<LawContentResponse> {
-  const params = new URLSearchParams({ name });
-  if (article) params.append("article", article);
+// article은 백엔드 /api/law의 필수 쿼리 파라미터다 (생략 시 422).
+export async function getLawContent(name: string, article: string): Promise<LawContentResponse> {
+  const params = new URLSearchParams({ name, article });
   const response = await fetch(`${API_BASE_URL}/api/law?${params.toString()}`);
   if (!response.ok) {
     throw new Error(`법령 조회 실패: ${response.status}`);
