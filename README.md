@@ -1273,6 +1273,52 @@ docker compose exec fastapi python -m app.tools.law_updater_async --all
 
 ---
 
+## ☁️ 클라우드 배포 경험 (AWS EC2)
+
+로컬 Docker Compose 환경을 AWS EC2(t3.micro, Amazon Linux 2023)에 실제로
+배포해본 경험입니다. 단순히 서버를 켜는 것을 넘어, 배포 과정에서 마주친
+두 가지 실제 문제를 직접 진단하고 해결했습니다.
+
+### 배포 전 보안 점검
+
+Claude Code로 배포 전 체크리스트를 점검하여, PostgreSQL(5432)과
+Qdrant(6333/6334)가 기본 설정상 `0.0.0.0`에 바인딩되어 외부에 노출될
+수 있는 문제를 발견했습니다. FastAPI/React는 실제 사용자 접속이
+필요하므로 `0.0.0.0`으로 유지하되, DB/Qdrant는 컨테이너 내부 통신만
+필요하므로 `127.0.0.1`로 바인딩을 제한하여, AWS 보안그룹 설정을
+깜빡하더라도 DB가 원천적으로 외부에 노출되지 않도록 조치했습니다.
+
+### 트러블슈팅 1 — Docker Buildx 누락
+
+`docker compose up -d` 실행 시 `compose build requires buildx 0.17.0
+or later` 에러 발생. Docker 엔진은 설치됐지만 이미지 빌드에 필요한
+buildx 플러그인이 없었던 것이 원인이었습니다. GitHub Releases API로
+최신 버전을 동적으로 조회해 `~/.docker/cli-plugins/`에 직접 설치하여
+해결했습니다. (첫 시도에서는 하드코딩한 버전 태그가 존재하지 않아
+9바이트짜리 에러 페이지만 다운로드되는 문제를 겪었고, 파일 크기로
+다운로드 실패를 판별한 뒤 동적 버전 조회 방식으로 재해결했습니다.)
+
+### 트러블슈팅 2 — crypto.randomUUID Secure Context 에러
+
+배포 후 프론트엔드 접속 시 흰 화면과 함께
+`crypto.randomUUID is not a function` 에러 발생. 브라우저 Console
+로그를 통해 원인을 특정했습니다 — `crypto.randomUUID`는 브라우저
+보안 정책상 HTTPS 또는 localhost에서만 동작하며, IP 주소를 통한
+평문 HTTP 접속은 "안전하지 않은 컨텍스트"로 간주되어 API 자체가
+차단됩니다. 도메인·인증서 없이도 빠르게 검증하기 위해 SSH 로컬
+포트 포워딩(`ssh -L 3000:localhost:3000`)으로 원격 포트를
+localhost로 위장시켜 문제를 우회했습니다.
+
+### 배포 스택
+
+- **인프라**: AWS EC2 (t3.micro, Amazon Linux 2023), 보안그룹으로
+  인바운드 포트 제한
+- **접근 제어**: IAM 사용자 분리, MFA, Budget 알림으로 계정 보안 확보
+- **비밀 정보 관리**: `.env` 파일은 git에 포함하지 않고 `scp`로 직접
+  전송, Claude Code로 git 히스토리 내 유출 여부 사전 검증
+
+---
+
 ## 트러블슈팅
 
 | 증상 | 원인 | 해결 |
