@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.7.2-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.7.3-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -981,6 +981,16 @@ cd law11_backend && python -m eval.eval_multiturn
 **코드 리뷰(8관점 병렬)로 발견 후 즉시 수정**: (1) 프론트엔드 `sessionId`가 `crypto.randomUUID()`로만 생성되고 저장되지 않아, 세션 격리 도입 이후 새로고침·재방문마다 새 세션으로 취급돼 직전 대화 회상이 매번 끊기는 회귀가 있었습니다. `localStorage("law11_session_id")`에 영속화하도록 수정 (App.tsx) — 새로고침 후에도 같은 세션으로 유지되며 회상이 정상 동작함을 라이브로 확인. (2) LangGraph `/ask-multi` 경로의 `router_node`가 `_detect_tool` 호출 시 session_id를 누락해, 세션 히스토리 없이 후속 질문을 분류하고 있었습니다 (`/api/ask`는 정상 전달 중이라 두 경로가 비대칭이었음). `state.get("session_id")`를 넘기도록 수정하고 회귀 테스트(`test_router_node.py`) 추가.
 
 **검증**: session_id 바인드 파라미터 단언 회귀 테스트 추가 (기본 세션 2건 + 명시 세션 1건 신규) + router_node 세션 전달 회귀 테스트 1건, pytest 58개 통과. 프론트엔드 `tsc -b --noEmit` 통과. 멀티턴 eval 5/5 (MT-001이 이제 세션 필터를 실제로 통과하며 검증), harness smoke 무회귀. 라이브 재현 3종: (a) session A 법령 질문 저장 → session B "기록에서 확인해줘" 시 A의 행 미노출, A 내 재질의 시 정상 회상, (b) 실제 Vite 개발 서버에서 법령 질문 후 새로고침 → localStorage 세션 유지로 "기록에서" 회상 정상 동작, (c) `/ask-multi`로 동일 시나리오 재현 시 세션 스코프 저장·회상 정상.
+
+---
+
+### 36. AWS 배포 전 연결성 점검 — CORS 하드코딩·Qdrant 컬렉션명 이원화 수정 `v1.7.3`
+
+**문제**: AWS 배포를 앞두고 라우팅/설정 연결성을 점검하던 중 두 가지를 발견. (1) `main.py`의 CORS `allow_origins`가 localhost 목록으로 하드코딩돼 있어, 실제 배포 도메인에서는 브라우저의 `/api/*` 호출이 전부 CORS로 차단됨. (2) `law_updater_async.py`의 `COLLECTION = "laws"`가 `.env`의 `QDRANT_COLLECTION_NAME`과 별개로 하드코딩돼 있음 — 이 업데이터는 주간 스케줄러·`/api/admin/update-laws`에서 인프로세스로 호출되므로, 나중에 컬렉션명을 바꾸면 업데이터가 쓰는 컬렉션과 검색 경로(`law_rag_tool`/`rag_service`/`self_rag_subgraph`)가 읽는 컬렉션이 갈라져 최신화해도 검색에 반영 안 되는 조용한 불일치가 생길 수 있음 (지금까진 둘 다 기본값 `"laws"`라 무증상).
+
+**수정**: `settings.py`에 `CORS_ORIGINS`(콤마 구분, `.env` 미설정 시 기존 localhost 목록을 기본값으로 유지) 추가하고 `main.py`가 이를 참조하도록 변경. `law_updater_async.py`의 `COLLECTION`을 `os.getenv("QDRANT_COLLECTION_NAME", "laws")`로 바꿔 검색 경로와 동일한 소스를 보게 통일. `.env.example`·`DEPLOYMENT.md`에 AWS 배포 시 `CORS_ORIGINS`(백엔드)와 `VITE_API_URL`(프론트 빌드 타임)을 실제 도메인으로 설정해야 한다는 안내 추가.
+
+**검증**: pytest 58개 통과 (무회귀).
 
 ---
 

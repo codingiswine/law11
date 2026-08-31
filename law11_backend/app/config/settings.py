@@ -79,3 +79,18 @@ qdrant_client = AsyncQdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=60
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+
+# ─────────────────────────────
+# 🌐 CORS 설정
+# ─────────────────────────────
+# .env의 CORS_ORIGINS(콤마 구분)로 배포 도메인 추가. 미설정 시 로컬 개발 기본값 사용.
+_DEFAULT_CORS_ORIGINS = (
+    "http://localhost:3000,http://127.0.0.1:3000,"
+    "http://localhost:5173,http://localhost:5174,http://localhost:5177,"
+    "http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5177"
+)
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", _DEFAULT_CORS_ORIGINS).split(",")
+    if origin.strip()
+]

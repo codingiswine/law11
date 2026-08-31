@@ -70,7 +70,7 @@ LAW_OC_ID = os.getenv("LAW_OC_ID", "drsgh1")
 
 EMBED_MODEL = "text-embedding-3-large"
 EMBED_DIM = 3072
-COLLECTION = "laws"
+COLLECTION = os.getenv("QDRANT_COLLECTION_NAME", "laws")
 
 BASE_URL = "https://www.law.go.kr/DRF/lawService.do"
 LAW_ID_MAP: Dict[str, str] = {

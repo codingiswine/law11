@@ -18,6 +18,15 @@ nano .env
 - `DB_PASS`: PostgreSQL 비밀번호 (강력한 비밀번호 사용)
 - `OPENAI_PROJECT_ID`: (선택) OpenAI 프로젝트 ID
 
+**AWS 등 실제 도메인으로 배포 시 반드시 설정:**
+- `CORS_ORIGINS` (`law11_backend/.env`): 프론트엔드가 서빙되는 실제 origin. 미설정 시 localhost만 허용되어 브라우저에서 `/api/*` 호출이 CORS로 차단됨.
+- `VITE_API_URL` (docker compose build 시 export): 프론트엔드 빌드에 박히는 백엔드 URL. `docker compose build`/`up --build` 전에 실제 백엔드 도메인·IP로 export해야 하며, 미설정 시 브라우저가 localhost:8000을 호출함.
+  ```bash
+  export CORS_ORIGINS=https://law11.yourdomain.com
+  export VITE_API_URL=https://api.yourdomain.com
+  docker compose up --build -d
+  ```
+
 ### 2. 보안 체크
 ```bash
 # .gitignore에 .env 포함 확인
