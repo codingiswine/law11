@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.7.3-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.7.4-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -991,6 +991,20 @@ cd law11_backend && python -m eval.eval_multiturn
 **수정**: `settings.py`에 `CORS_ORIGINS`(콤마 구분, `.env` 미설정 시 기존 localhost 목록을 기본값으로 유지) 추가하고 `main.py`가 이를 참조하도록 변경. `law_updater_async.py`의 `COLLECTION`을 `os.getenv("QDRANT_COLLECTION_NAME", "laws")`로 바꿔 검색 경로와 동일한 소스를 보게 통일. `.env.example`·`DEPLOYMENT.md`에 AWS 배포 시 `CORS_ORIGINS`(백엔드)와 `VITE_API_URL`(프론트 빌드 타임)을 실제 도메인으로 설정해야 한다는 안내 추가.
 
 **검증**: pytest 58개 통과 (무회귀).
+
+---
+
+### 37. 법령 사이드패널의 폴백이 항상 422로 실패하던 死경로 제거 `v1.7.4`
+
+**문제** (연결성 점검 중 발견): `LawSidePanel`은 특정 조문 조회가 404면 "법령 전체 상위 조문"으로 재시도하도록 짜여 있었는데(`getLawContent(lawName, "")`), 백엔드 `/api/law`의 `article`은 기본값 없는 **필수 쿼리 파라미터**라 이 호출이 도달조차 못 합니다. 실측: article 생략 시 FastAPI 검증 단계에서 `422 {'type':'missing','loc':['query','article']}`, 빈 문자열 전달 시 핸들러가 `422 name과 article은 필수 값입니다`. 즉 폴백은 항상 `catch`로 떨어져 `NOT_FOUND`로 끝나는 실행되지 않는 의도였습니다 (핸들러 쿼리도 `LIMIT 1`이라 애초에 "전체 조문"을 못 돌려줌).
+
+**"고치기" 대신 "제거"를 택한 이유**: 폴백이 발동하는 조건은 인용된 (법령, 조문)이 `law_chunks`에 없을 때인데, (a) 법령 자체가 DB에 없는 경우(`LAW_ID_MAP` 9개 법령 외 — 웹 폴백이 인용한 소방시설법 등, #34)가 대부분이고 이건 백엔드를 고쳐도 조문 0건이라 결과가 같습니다. (b) 법은 있는데 그 조문만 없는 경우에만 의미가 있는데, 이때 **그 법의 다른 조문을 대신 보여주는 건 오히려 위험**합니다 — 할루시네이션된 조문 번호를 클릭했을 때 그럴듯한 조문이 뜨면 사용자가 인용이 맞았다고 오해하며, 이는 #7("DB에 없는 법령을 물으면 다른 법의 조문을 사칭")과 같은 계열의 리스크입니다. 없는 조문은 없다고 말하는 게 맞는 동작이라 판단해 폴백을 제거했습니다.
+
+**수정**: `LawSidePanel`의 404 재시도 분기 삭제(두 404 분기를 하나로 병합, 불필요해진 `async` 제거). 이 변경으로 고아가 된 `api.ts`의 `getLawContent(name, article = "")` 기본값도 함께 정리 — "article 생략 가능"이라는 잘못된 시그니처가 남으면 다음 사람이 같은 함정을 밟으므로 필수 인자로 바꾸고 백엔드 계약을 주석에 명시.
+
+**검증**: 백엔드 `/api/law`를 TestClient로 직접 호출해 두 경로(파라미터 생략·빈 문자열) 모두 422임을 실측 확인. 프론트엔드 `tsc -b --noEmit` 통과, `npm run build`(CI 동일 경로) 통과. 사용자에게 보이는 동작은 변경 전과 동일(NOT_FOUND).
+
+**함께 점검한 연결성 (이상 없음)**: `routes.tool_map` ↔ `question_router.valid` 6개 tool 일치, SSE 이벤트 5종(`text`/`status`/`error`/`saved`/`source`) 전부 프론트 `switch`에서 처리(#12·#17 버그 클래스 재발 없음), 프론트 호출 엔드포인트 5개 전부 백엔드 존재, `LawContentResponse` 타입 ↔ 응답 형태 일치.
 
 ---
 
