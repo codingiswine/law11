@@ -5,9 +5,9 @@
 [![CI](https://github.com/codingiswine/law11/actions/workflows/ci.yml/badge.svg)](https://github.com/codingiswine/law11/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
-[![Version](https://img.shields.io/badge/Version-1.7.2-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.7.4-orange.svg)]()
 
-A domain-specialized RAG system over **9 Korean occupational-safety laws (1,629 articles)**. Started as a PoC for a Seoul district office's disaster-safety team, rebuilt as an independent project with a measurement-first engineering process.
+A domain-specialized RAG system over **9 Korean occupational-safety laws (1,629 articles)**. Built on a chatbot from a startup internship the year before, then rebuilt as an independent personal project — alongside an IT-academy internship — with a measurement-first engineering process.
 
 Pipeline: **PostgreSQL exact-match → Qdrant semantic search → GPT-4o-mini**, with SSE streaming, multi-turn sessions, citation tracking, and an experimental LangGraph Self-RAG path (`/api/ask-multi`).
 
@@ -22,9 +22,10 @@ All numbers are reproducible from the eval scripts in this repo (measured 2026-0
 | Hallucination safe rate | **96.7%** (LLM-judge, 0 citation misses) |
 | Router accuracy | **32/32 (100%)** (keyword fast-path + LLM hybrid) |
 | Multi-turn regression evals | 5 scenarios, each **mutation-tested** (fix reverted → eval must fail) |
-| Automated tests / CI | 54 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
+| Automated tests / CI | 58 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
 | Load test | 20 concurrent users, zero failures (2× the design target) |
 | Fault injection | 5 dependencies (PG, Qdrant, OpenAI, Tavily, Naver) killed individually — 4 defects found and fixed (#31) |
+| Documented find-fix cycles | 37 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
 
 ## Engineering highlights
 
@@ -37,6 +38,25 @@ The changelog documents 37 find-fix cycles in "symptom → root cause → measur
 - **Killing dependencies on purpose surfaced a hallucination path that only exists in production incidents.** With every web-search backend (Tavily, Naver) deliberately taken down, the fallback still asked GPT to "summarize the search results" — with zero results. It answered anyway, inventing a specific numeric safety standard and presenting it as legal fact. Fixed by aborting generation when the search context is empty instead of letting the model fill the gap. Also found in the same sweep: a PostgreSQL outage was reported to the user as "this article doesn't exist," misrepresenting an infrastructure failure as a data-absence fact. (#31)
 - **The "10 concurrent users" assumption was load-tested for the first time** after being carried untested from the predecessor project — validated at 20 users with zero failures.
 - **Laws stay current automatically**: a weekly APScheduler job syncs PostgreSQL and Qdrant from the Korean Ministry of Government Legislation (DRF) API, now with post-sync consistency checks and stale-article cleanup so law changes/repeals don't linger as silent drift. (#32)
+
+## Fixes that predate the changelog
+
+The numbered changelog (#1–#37) starts at `v1.0.1` (2026-07-16), when the
+"symptom → root cause → measured verification" format was adopted. Earlier bug fixes
+exist only as commits; a later audit (`docs/defect_audit.md`) recovered them. They are
+listed separately so the existing numbering stays stable.
+
+| Commit | Date | Fix |
+|---|---|---|
+| [`2c8097e`](https://github.com/codingiswine/law11/commit/2c8097e) | 2026-07-05 | Paragraph/item numbers duplicated inside article text; citation badge order disagreed with the score shown on it |
+| [`764b646`](https://github.com/codingiswine/law11/commit/764b646) | 2026-07-10 | Stream-completion race — a previous question's completion could fire on the next one, or a received answer could be dropped entirely; `confidence_score` read the pre-dedup top hit |
+| [`ffdcb2f`](https://github.com/codingiswine/law11/commit/ffdcb2f) | 2026-07-11 | Web-fallback citations carried `score: 0.0`, rendered as a "0%" relevance badge — a false signal for "no score" |
+| [`a5a5ea1`](https://github.com/codingiswine/law11/commit/a5a5ea1) | 2026-07-11 | Side panel showed a blank article-number header (the `article_number` column was NULL for every row until #28) and ran paragraph numbers into the text |
+| [`2240ee5`](https://github.com/codingiswine/law11/commit/2240ee5) | 2026-07-12 | Sidebar history was always empty — the frontend sent a leftover `user_id` from the predecessor project while the backend saved another; `/api/history` also never returned `session_id` |
+| [`893e0e2`](https://github.com/codingiswine/law11/commit/893e0e2) | 2026-07-12 | Redeploys did not reach users: `nginx.conf` was never copied into the image, so browsers kept a cached `index.html` pointing at old hashed bundles |
+| [`9d9c230`](https://github.com/codingiswine/law11/commit/9d9c230) | 2026-08-31 | PostgreSQL (5432) and Qdrant (6333/6334) were published on `0.0.0.0` — harmless locally, but on EC2 the security group becomes the only line of defense. Rebound to `127.0.0.1` |
+
+See the [Korean README](README.md#pre-changelog-수정-이력) for the full write-up of each.
 
 ## Architecture
 
