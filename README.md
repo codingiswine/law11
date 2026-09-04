@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.8.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.8.1-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -63,14 +63,14 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 지표 | 수치 |
 |---|---|
 | 검색 Top-3 recall | **96.7%** (골든셋 30케이스 · 복수 인정 조문 정책 #30 · 법령 용어 매핑 #33) |
-| RAGAS Faithfulness / Context Recall | **0.71–0.86 / 0.93** (30케이스, gpt-4o-mini judge · Faithfulness는 judge 분산이 ±0.08이라 3회 실행 범위로 표기) |
+| RAGAS Faithfulness / Context Recall | **0.44–0.55 / 0.82–0.85** (30케이스, gpt-4o-mini judge, 2026-09-04 재측정 · 2026-07-19엔 0.71–0.86/0.93이었음 — 그 사이 `eval/requirements-eval.txt`의 langchain-openai/openai 버전이 새로 갱신되며 judge 채점 자체가 달라진 것으로 추정, 원인 미확정 · answer_relevancy는 한국어에서 구조적으로 신뢰 불가로 판정돼 지표에서 제외됨(#39)) |
 | 할루시네이션 안전율 | **96.7%** (LLM-judge 30케이스 · Citation 누락 0건) |
 | 라우터 정확도 | **43/43 (100%)** (키워드 fast-path + LLM 하이브리드, 판례 라우팅 케이스 11개 포함 · #38) |
 | 멀티턴 회귀 eval | 시나리오 5개 — 전부 **mutation test**(fix 되돌리기)로 회귀 감지력 검증 |
 | 자동화 테스트 / CI | pytest 66개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 (설계 목표 10명의 2배) |
 | 장애 주입 테스트 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 — 결함 4건 발견·수정 (#31) |
-| 문서화된 발견-수정 사이클 | changelog 38건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
+| 문서화된 발견-수정 사이클 | changelog 39건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
 
 **시스템 개요**:
 
@@ -1018,6 +1018,24 @@ cd law11_backend && python -m eval.eval_multiturn
 **실측으로 잡은 버그**: (1) 판례 상세조회의 `판시사항`/`판결요지` 필드에 `<br/>` 등 HTML 태그가 섞여 나옴 — 파싱 시 스트리핑 처리. (2) 직접 사건번호 조회 답변에서 GPT가 "선고일자: 확인되지 않습니다"라고 응답 — `case_meta`의 사건번호/법원명/선고일자를 GPT 프롬프트에 안 넣어줬기 때문. law_rag_tool의 "시행일자는 DB 값만 표시(GPT 생성 금지)" 원칙과 동일하게, DB 값을 별도 footer로 붙이도록 수정. (3) `case_citations` 저장 시 Qdrant payload에서 문자열로 저장된 `judgment_date`를 `DATE` 컬럼에 그대로 바인딩해 asyncpg 타입 에러 발생 — `routes.py`의 `save_case_citations()`에서 `date.fromisoformat()`으로 변환하도록 수정.
 
 **검증**: 로컬 Postgres/Qdrant 기동 후 `case_law_updater_async.py --law 산업안전보건법` 실제 실행 — 대법원 판례 47건 수집, PG↔Qdrant 정합성 일치. `/api/ask`에 실제 SSE 요청 3종(의미검색/사건번호 직접조회/미존재 사건번호)으로 라이브 재현: 의미검색은 관련 판례 5건 발견 후 정상 요약, 직접조회는 판례정보 footer 포함 정상 응답, 존재하지 않는 사건번호(`1999가9999`)는 다른 판례로 대체하지 않고 정직하게 "존재하지 않습니다" 응답(무근거 답변 금지 게이트 확인). `case_citations` 테이블에 인용 5건 정상 저장 확인. 라우터 eval에 판례 케이스 11개 추가 후 **43/43 (100%)** — "중대재해처벌법 판례" 같은 혼동 케이스도 정상 라우팅. pytest 8개 추가(사건번호 감지/정규화, HTML 스트리핑, 날짜 파싱) — 총 **66개 전체 통과**(기존 58개 무회귀). 판례 골든셋(`eval/golden_dataset_case_law.json`)은 law.go.kr에서 실제 조회한 판례만 담아 5건으로 시작 — 조작된 사건번호/판시내용 없음, 실제 데이터 확대 후 10~15건으로 늘릴 예정.
+
+---
+
+### 39. 법조문 인용 누락 버그 수정 + 판례 정합성 버그 수정 + RAGAS answer_relevancy 제거 `v1.8.1`
+
+**문제 1 (사용자 피드백으로 발견)**: "새로 지어진 건물의 계단 안전성 평가는 어떻게 해야돼?" 질문에서 law_rag_tool의 Qdrant 의미검색이 관련 조문 5개(제26·52·28·13·30조)를 정상 검색해 GPT에 전달했는데, 실제 답변은 26·28·30조만 인용하고 52조(구축물등의 안전성 평가)·13조는 출처 표기 없이 요약에 녹여 넣었다. 라이브 재현으로 확인(`meta.citations`엔 5개 다 있는데 답변엔 3개만).
+
+**수정 1**: `law_rag_tool.py`의 `SYSTEM_PROMPT`(CLAUDE.md 보호 대상)는 그대로 두고, Branch A(의미검색)의 지역 user 프롬프트 템플릿에 "제공된 조문을 전부 검토하고 실제 사용한 조문은 빠짐없이 법적 근거에 포함하라"는 지시 한 줄 추가. 재현 테스트로 5개 전부 인용되는지 확인.
+
+**문제 2**: 판례 전체 수집(`--all`)을 처음 돌려본 결과 `verify_consistency`가 PG↔Qdrant 불일치를 감지. 같은 판례가 여러 법령 검색에 동시에 걸리는 경우(산업안전보건법+시행령+시행규칙+기준에관한규칙이 같은 사건을 함께 인용)가 실제로 많았는데, PG의 `ON CONFLICT DO UPDATE SET`에 `source_law_norm`이 빠져 "처음 저장된 법령"에 영구 고정됐고, Qdrant는 포인트 전체를 교체하는 upsert라 "마지막에 저장된 법령"으로 매번 덮어써졌다.
+
+**수정 2**: `DO UPDATE SET`에 `source_law_norm = EXCLUDED.source_law_norm` 추가해 PG도 Qdrant와 동일한 규칙으로 통일. 재실행 후 일치 확인(6개 법령, 총 52건).
+
+**문제 3**: 위 수정들을 RAGAS 골든셋 30케이스로 회귀 확인하던 중 Answer Relevancy가 0.57 → 0.0003으로 붕괴. `raise_exceptions=True`로 직접 재현한 결과 예외는 없고 조용한 로직 버그였다 — RAGAS 0.1.21의 `answer_relevancy`는 GPT가 답변을 "noncommittal(회피성)"로 판정하면 실제 유사도와 무관하게 점수를 강제로 0으로 만드는데, 이 판정용 few-shot 예시가 영어로만 하드코딩돼 있어 명백히 committal한 한국어 법령 답변도 매번 noncommittal=1로 오분류했다. `answer_relevancy.adapt("korean")`로 프롬프트를 자동 번역해도 고쳐지지 않음 — 번역 캐시가 가끔 깨진 JSON을 만들어 크래시하고, 번역이 성공해도 오분류는 그대로였다.
+
+**수정 3**: `harness.py`에서 `answer_relevancy`를 지표 목록에서 제거(Faithfulness/Context Precision/Context Recall 3개만 사용 — 이 셋은 언어 종속 분류 단계가 없어 정상 작동). 겸사겸사 RAGAS 기본 동시성(max_workers=16)이 gpt-4o-mini 조직 TPM 한도를 순식간에 넘겨 judge 호출이 대량 실패하던 것도 확인해 `max_workers=1`(순차 실행)으로 낮췄고, 순차 실행에도 개별 호출이 180초를 넘는 경우가 있어 `timeout=300`으로 상향.
+
+**검증**: `python -m eval.harness` 재실행(30케이스, timeout 없이 깨끗하게 통과) — Faithfulness/Context Recall 둘 다 직전 대비 +4%, 회귀 없음. 그 전 실행에서 나타난 Context Recall -6%는 timeout으로 표본 2개가 빠진 노이즈였음을 timeout 여유를 늘려 재확인.
 
 ---
 
