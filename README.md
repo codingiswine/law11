@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.7.4-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.8.0-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -65,18 +65,19 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 검색 Top-3 recall | **96.7%** (골든셋 30케이스 · 복수 인정 조문 정책 #30 · 법령 용어 매핑 #33) |
 | RAGAS Faithfulness / Context Recall | **0.71–0.86 / 0.93** (30케이스, gpt-4o-mini judge · Faithfulness는 judge 분산이 ±0.08이라 3회 실행 범위로 표기) |
 | 할루시네이션 안전율 | **96.7%** (LLM-judge 30케이스 · Citation 누락 0건) |
-| 라우터 정확도 | **32/32 (100%)** (키워드 fast-path + LLM 하이브리드) |
+| 라우터 정확도 | **43/43 (100%)** (키워드 fast-path + LLM 하이브리드, 판례 라우팅 케이스 11개 포함 · #38) |
 | 멀티턴 회귀 eval | 시나리오 5개 — 전부 **mutation test**(fix 되돌리기)로 회귀 감지력 검증 |
-| 자동화 테스트 / CI | pytest 58개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
+| 자동화 테스트 / CI | pytest 66개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 (설계 목표 10명의 2배) |
 | 장애 주입 테스트 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 — 결함 4건 발견·수정 (#31) |
-| 문서화된 발견-수정 사이클 | changelog 37건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
+| 문서화된 발견-수정 사이클 | changelog 38건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
 
 **시스템 개요**:
 
 | 항목 | 수치 |
 |---|---|
 | 수록 법령 | 9개 (조문 1,629개) |
+| 수록 판례 | 대법원 판례, 법령당 상한 100건 (#38 — 현재 산업안전보건법 47건 시험 수집, 나머지 8개 법령은 `case_law_updater_async.py --all` 실행 후 확장) |
 | 임베딩 모델 | `text-embedding-3-large` (3,072차원) |
 | 평균 응답 시간 | < 3초 (스트리밍 첫 토큰 기준) |
 
@@ -1005,6 +1006,18 @@ cd law11_backend && python -m eval.eval_multiturn
 **검증**: 백엔드 `/api/law`를 TestClient로 직접 호출해 두 경로(파라미터 생략·빈 문자열) 모두 422임을 실측 확인. 프론트엔드 `tsc -b --noEmit` 통과, `npm run build`(CI 동일 경로) 통과. 사용자에게 보이는 동작은 변경 전과 동일(NOT_FOUND).
 
 **함께 점검한 연결성 (이상 없음)**: `routes.tool_map` ↔ `question_router.valid` 6개 tool 일치, SSE 이벤트 5종(`text`/`status`/`error`/`saved`/`source`) 전부 프론트 `switch`에서 처리(#12·#17 버그 클래스 재발 없음), 프론트 호출 엔드포인트 5개 전부 백엔드 존재, `LawContentResponse` 타입 ↔ 응답 형태 일치.
+
+---
+
+### 38. 판례(대법원) 검색 기능 추가 — 별도 tool + on-demand dropdown `v1.8.0`
+
+**배경**: 법조문(law_chunks)만 검색 가능했고 판례는 전혀 없었음. `PRD/01_PRD.md`에 "법령정보원 판례 DB 별도 연동 필요, Phase 3 이후 검토"로 명시적으로 범위 밖에 있던 기능을 재검토했다. 구현 전 법제처 DRF `target=prec` API(`lawSearch.do`/`lawService.do`)가 실제로 동작하는지, `JO=<법령명>` 필터가 정말 해당 법령 인용 판례만 걸러내는지, `org=400201`이 실제로 대법원만 반환하는지를 먼저 curl로 실측 검증한 뒤 설계했다.
+
+**구현**: `case_law_chunks`/`case_citations` 테이블 신설(`init.sql`), Qdrant 별도 컬렉션(`case_laws`, 기존 `laws`와 분리 — `law_rag_tool`의 조인 로직을 안 건드리기 위함). `case_law_updater_async.py`가 9개 추적 법령 각각에 대해 `JO=<법령명>&org=400201`로 검색해 법령당 최대 100건 수집(무제한 자유검색 금지). 판례는 선고 후 불변이라 `law_updater_async.py`의 `remove_stale_articles` 같은 폐지 삭제 로직은 의도적으로 이식하지 않음. `case_law_rag_tool.py`는 `law_rag_tool.py`의 PG 정확매칭 → Qdrant 정확필터 fallback → Qdrant 의미검색 → web fallback → GPT 요약 우선순위 체인과 anti-hallucination 원칙(근거 없으면 생성 중단)을 그대로 미러링하되, 사건번호는 조문과 달리 가지번호 스킴이 없어 정규화 로직을 단순화했다. 라우팅은 `_CASE_LAW_KEYWORDS`("판례"/"판결"/"대법원" 등)를 `_ARTICLE_NUMBER_PATTERN`/`_CORE_LAWS` 체크보다 먼저 배치 — "중대재해처벌법 판례 알려줘"처럼 법령명과 판례 키워드가 동시에 있는 질문이 law_rag_tool로 오분류되는 걸 막기 위함. UI는 새 엔드포인트 없이 기존 `/api/ask`를 재사용 — law_rag_tool 답변 아래 "관련 판례 보기" 버튼을 **클릭했을 때만(lazy)** 판례 조회 질의를 다시 보내는 방식이라, 판례가 궁금하지 않은 사용자에겐 추가 비용이 전혀 없다.
+
+**실측으로 잡은 버그**: (1) 판례 상세조회의 `판시사항`/`판결요지` 필드에 `<br/>` 등 HTML 태그가 섞여 나옴 — 파싱 시 스트리핑 처리. (2) 직접 사건번호 조회 답변에서 GPT가 "선고일자: 확인되지 않습니다"라고 응답 — `case_meta`의 사건번호/법원명/선고일자를 GPT 프롬프트에 안 넣어줬기 때문. law_rag_tool의 "시행일자는 DB 값만 표시(GPT 생성 금지)" 원칙과 동일하게, DB 값을 별도 footer로 붙이도록 수정. (3) `case_citations` 저장 시 Qdrant payload에서 문자열로 저장된 `judgment_date`를 `DATE` 컬럼에 그대로 바인딩해 asyncpg 타입 에러 발생 — `routes.py`의 `save_case_citations()`에서 `date.fromisoformat()`으로 변환하도록 수정.
+
+**검증**: 로컬 Postgres/Qdrant 기동 후 `case_law_updater_async.py --law 산업안전보건법` 실제 실행 — 대법원 판례 47건 수집, PG↔Qdrant 정합성 일치. `/api/ask`에 실제 SSE 요청 3종(의미검색/사건번호 직접조회/미존재 사건번호)으로 라이브 재현: 의미검색은 관련 판례 5건 발견 후 정상 요약, 직접조회는 판례정보 footer 포함 정상 응답, 존재하지 않는 사건번호(`1999가9999`)는 다른 판례로 대체하지 않고 정직하게 "존재하지 않습니다" 응답(무근거 답변 금지 게이트 확인). `case_citations` 테이블에 인용 5건 정상 저장 확인. 라우터 eval에 판례 케이스 11개 추가 후 **43/43 (100%)** — "중대재해처벌법 판례" 같은 혼동 케이스도 정상 라우팅. pytest 8개 추가(사건번호 감지/정규화, HTML 스트리핑, 날짜 파싱) — 총 **66개 전체 통과**(기존 58개 무회귀). 판례 골든셋(`eval/golden_dataset_case_law.json`)은 law.go.kr에서 실제 조회한 판례만 담아 5건으로 시작 — 조작된 사건번호/판시내용 없음, 실제 데이터 확대 후 10~15건으로 늘릴 예정.
 
 ---
 

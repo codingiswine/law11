@@ -1,0 +1,69 @@
+{
+  "version": "1.0-draft",
+  "created_at": "2026-09-04T00:00:00",
+  "description": "Law11 판례 RAG 평가용 골든 데이터셋 초안. law.go.kr DRF API(target=prec)에서 실제 조회한 대법원 판례만 담았다 — 조작된 사건번호/판시내용 없음. case_law_updater_async.py로 실제 수집을 돌린 뒤, 더 많은 실제 판례로 10~15개까지 확장할 것 (golden_dataset.json과 동일한 draft 관례).",
+  "total": 5,
+  "dataset": [
+    {
+      "id": "CL-001",
+      "question_type": "direct_case",
+      "case_number": "2024도5902",
+      "case_number_norm": "2024도5902",
+      "court_name": "대법원",
+      "judgment_date": "2026-06-25",
+      "source_law_norm": "산업안전보건법",
+      "question": "대법원 2024도5902 판결 내용 알려줘",
+      "ground_truth": "산업안전보건법위반·업무상과실치사·업무상과실치상 사건. 도급인이 산업안전보건법 제63조에 따라 부담하는 안전·보건조치의무의 내용이 문제된 사건으로, 관계수급인 근로자에 대한 도급인의 안전·보건조치의무 범위와 업무상과실치사상죄 성립 요건을 다룸.",
+      "expected_keywords": ["산업안전보건법", "제63조", "안전보건조치의무", "도급인"]
+    },
+    {
+      "id": "CL-002",
+      "question_type": "direct_case",
+      "case_number": "2022도16668",
+      "case_number_norm": "2022도16668",
+      "court_name": "대법원",
+      "judgment_date": "2026-02-12",
+      "source_law_norm": "산업안전보건법",
+      "question": "2022도16668 판례 요지가 뭐야?",
+      "ground_truth": "업무상과실치사·산업안전보건법위반 사건. 산업안전보건법상 안전·보건조치 의무 위반 여부의 판단 기준, 그리고 사업주에 대한 산업안전보건법 제167조 제1항, 제38조 제2항·제3항 위반죄 성립 요건(안전조치가 취해지지 않은 상태에서 작업이 이루어지고 있음을 알면서도 방치한 경우 등)을 판시함.",
+      "expected_keywords": ["산업안전보건법", "제38조", "제167조", "안전조치"]
+    },
+    {
+      "id": "CL-003",
+      "question_type": "direct_case",
+      "case_number": "2025도4428",
+      "case_number_norm": "2025도4428",
+      "court_name": "대법원",
+      "judgment_date": "2025-08-14",
+      "source_law_norm": "산업안전보건법",
+      "question": "대법원 2025도4428 사건 판결요지 알려줘",
+      "ground_truth": "건축물관리법위반·업무상과실치사·업무상과실치상·산업안전보건법위반 사건. 2019년 전부개정 산업안전보건법상 '사업주'의 안전·보건조치의무(제38조, 제39조)가 '도급인'의 안전·보건조치의무(제63조)에도 적용되는지, 그리고 그 위반이 업무상과실치사상죄의 주의의무를 구성하는지를 판시함(원칙적 적극).",
+      "expected_keywords": ["산업안전보건법", "제63조", "제38조", "제39조", "도급인"]
+    },
+    {
+      "id": "CL-004",
+      "question_type": "semantic",
+      "case_number": "",
+      "case_number_norm": "",
+      "court_name": "대법원",
+      "judgment_date": "",
+      "source_law_norm": "산업안전보건법",
+      "question": "산업안전보건법상 도급인의 안전조치 의무 관련 대법원 판례 있어?",
+      "ground_truth": "2025도4428, 2024도5902 등 — 도급인이 산업안전보건법 제63조에 따라 부담하는 안전·보건조치의무의 범위와, 그 위반이 업무상과실치사상죄를 구성하는지를 다룬 대법원 판례들.",
+      "expected_keywords": ["도급인", "제63조", "안전보건조치의무"]
+    },
+    {
+      "id": "CL-005",
+      "question_type": "not_found",
+      "case_number": "1999가9999",
+      "case_number_norm": "1999가9999",
+      "court_name": "",
+      "judgment_date": "",
+      "source_law_norm": "",
+      "question": "1999가9999 판례 내용 알려줘",
+      "ground_truth": "존재하지 않는 사건번호 — 수집 범위(9개 추적 법령 인용, 대법원 판례)에 없는 임의 사건번호. \"확인되지 않습니다\" 류의 정직한 미발견 응답이 나와야 하며, 다른 판례로 대체 답변하면 안 됨.",
+      "expected_keywords": []
+    }
+  ],
+  "_note": "CL-001~003은 law.go.kr DRF API에서 실측 조회한 진짜 판례(판례정보일련번호 622955/622681/608417). CL-004는 두 실제 판례를 결합한 주제형 질문. CL-005는 anti-hallucination 게이트 검증용 negative case. 실제 DB 수집(case_law_updater_async.py --all) 이후 eval/eval_retrieval.py 패턴으로 top-k 검증 및 케이스 10~15개로 확장 필요."
+}
