@@ -30,11 +30,10 @@ from eval.retriever import retrieve_and_generate
 
 # RAGAS
 from ragas import evaluate
-from ragas.metrics import faithfulness, answer_relevancy, context_precision, context_recall
+from ragas.metrics import faithfulness, context_precision, context_recall
 from ragas.run_config import RunConfig
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai import ChatOpenAI
 from ragas.llms import LangchainLLMWrapper
-from ragas.embeddings import LangchainEmbeddingsWrapper
 from datasets import Dataset
 
 # ────────────────────────────────────────────
@@ -59,17 +58,22 @@ METRIC_THRESHOLDS = {"faithfulness": 0.15}
 _ragas_llm = LangchainLLMWrapper(
     ChatOpenAI(model="gpt-4o-mini", api_key=settings.OPENAI_API_KEY)
 )
-_ragas_emb = LangchainEmbeddingsWrapper(
-    OpenAIEmbeddings(model="text-embedding-3-large", api_key=settings.OPENAI_API_KEY)
-)
-for _m in [faithfulness, answer_relevancy, context_precision, context_recall]:
+for _m in [faithfulness, context_precision, context_recall]:
     _m.llm = _ragas_llm
-answer_relevancy.embeddings = _ragas_emb
 
-METRICS_ORDER = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
+# ⚠️ answer_relevancy는 harness 지표에서 제외했다 (실측 확인, 2026-09-04).
+# RAGAS 0.1.21의 noncommittal 판정(회피성 답변이면 유사도와 무관하게 점수를
+# 강제로 0으로 만드는 로직)이 영어 few-shot 예시로만 하드코딩돼 있어, 한국어
+# 법령 답변을 거의 매번 noncommittal=1로 오분류해 점수가 0에 수렴했다.
+# answer_relevancy.adapt("korean")로 프롬프트를 한국어로 번역해봐도 (1) 번역
+# 캐시 자체가 가끔 깨진 JSON을 만들어 크래시했고 (2) 번역이 성공해도
+# noncommittal 오분류는 그대로였다 — RAGAS의 로컬라이제이션 메커니즘 자체가
+# 한국어에서 신뢰할 수 없다는 뜻. Faithfulness/Context Precision/Context
+# Recall 3개는 이런 언어 종속 분류 단계가 없어 정상 작동한다.
+
+METRICS_ORDER = ["faithfulness", "context_precision", "context_recall"]
 METRICS_LABEL = {
     "faithfulness":      "Faithfulness",
-    "answer_relevancy":  "Answer Relevancy",
     "context_precision": "Context Precision",
     "context_recall":    "Context Recall",
 }
@@ -162,13 +166,16 @@ def compute_ragas(pipeline_results: List[Dict]) -> Dict[str, float]:
     # ⚠️ RAGAS 기본 동시성(max_workers=16)이 gpt-4o-mini 조직 TPM 한도(200,000)를
     # 순식간에 넘겨 judge 호출이 대량 실패한 것을 실측 확인(2026-09-04) — 실패 시
     # RAGAS는 해당 지표를 None으로 채우고 집계에서 조용히 스킵해, "회귀"처럼
-    # 보이는 가짜 저점(예: answer_relevancy 0.57→0.0003)이 나온다. max_workers=3도
-    # timeout이 남아있어(실측) 순차 실행(1)으로 신뢰성을 우선한다 — 회귀 확인은
-    # 자주 도는 핫패스가 아니라 느려도 괜찮다.
+    # 보이는 가짜 저점이 나온다 (실측 사례: 당시 포함돼 있던 answer_relevancy가
+    # 0.57→0.0003으로 떨어져 보였음 — 그 지표는 이후 별도 사유로 제거됨, 위 주석
+    # 참고). max_workers=3도 timeout이 남아있어(실측) 순차 실행(1)으로 신뢰성을
+    # 우선한다 — 회귀 확인은 자주 도는 핫패스가 아니라 느려도 괜찮다.
+    # timeout 180→300: 순차 실행(max_workers=1)에서도 개별 judge 호출이 180초를
+    # 넘는 경우가 실측 확인됨(2026-09-04) — 동시성과 무관한 API 응답 지연.
     score = evaluate(
         dataset=ds,
-        metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
-        run_config=RunConfig(max_workers=1, timeout=180),
+        metrics=[faithfulness, context_precision, context_recall],
+        run_config=RunConfig(max_workers=1, timeout=300),
     )
     return score.to_pandas().mean(numeric_only=True).to_dict()
 
