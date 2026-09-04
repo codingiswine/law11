@@ -15,6 +15,7 @@ _LLM_SYSTEM = """너는 Law11 법령 챗봇의 질문 라우터다.
 
 도구 목록:
 - law_rag_tool       : 한국 산업안전보건 법령 관련 (조문, 기준, 의무, 처벌 등)
+- case_law_rag_tool  : 판례/판결/법원 판단 사례 조회 (사건번호, 대법원 판결 등 — 법조문이 아닌 법원의 실제 판단 요청)
 - websearch_tool     : 외국 법령, 최신 개정, 법제처 외 웹 정보 필요
 - news_tool          : 뉴스/기사/보도 요청
 - blog_tool          : 블로그/후기/리뷰 요청
@@ -32,6 +33,7 @@ _llm_cache: Dict[str, str] = {}
 # LAW_RAG_TOOL로 잘못 라우팅됨). "법적근거"는 이미 별도 키워드로 있어 의도한
 # 케이스는 그대로 커버되고, 단독 "근거"가 빠지면 그 문구만 LLM 분류로 넘어간다.
 _LAW_KEYWORDS = ["법적근거", "법령", "법조문", "조문", "기준", "조항", "법률", "시행령", "시행규칙"]
+_CASE_LAW_KEYWORDS = ["판례", "판결", "선고", "대법원", "법원판단", "법원의판단"]
 _NEWS_KEYWORDS = ["뉴스", "보도", "이슈", "사건", "사고", "기사", "속보"]
 _BLOG_KEYWORDS = ["블로그", "포스팅", "후기", "리뷰", "경험담"]
 _DB_KEYWORDS = ["데이터에서", "기록에서", "db에서", "데이터 확인", "기록 확인"]
@@ -92,7 +94,7 @@ async def _classify_with_llm(question: str, history: str) -> str:
             max_tokens=10,
         )
         tool = resp.choices[0].message.content.strip().lower().split()[0]
-        valid = {"law_rag_tool", "websearch_tool", "news_tool", "blog_tool", "general_tool", "db_query_tool_async"}
+        valid = {"law_rag_tool", "case_law_rag_tool", "websearch_tool", "news_tool", "blog_tool", "general_tool", "db_query_tool_async"}
         result = tool if tool in valid else "law_rag_tool"
         _llm_cache[cache_key] = result
         return result
@@ -117,6 +119,13 @@ async def detect_tool(user_id: str, text: str, session_id: Optional[str] = None)
     if any(k in raw_q_lower for k in _FOREIGN_KEYWORDS):
         logger.info("🌐 [Router] 외국 법령/기관 → WEBSEARCH_TOOL (fast)")
         return _plan("websearch_tool")
+
+    # ⚠️ _ARTICLE_NUMBER_PATTERN/_LAW_KEYWORDS/_CORE_LAWS보다 먼저 검사한다.
+    # "중대재해처벌법 판례 알려줘"는 _CORE_LAWS와 "판례"를 동시에 포함하므로,
+    # 순서를 바꾸면 아래 법령 체크가 먼저 걸려 law_rag_tool로 오분류된다.
+    if any(k in normalized_q for k in _CASE_LAW_KEYWORDS):
+        logger.info("📋 [Router] 판례 키워드 → CASE_LAW_RAG_TOOL (fast)")
+        return _plan("case_law_rag_tool")
 
     if _ARTICLE_NUMBER_PATTERN.search(text):
         logger.info("📜 [Router] 조문 번호 패턴 감지 → LAW_RAG_TOOL (fast)")

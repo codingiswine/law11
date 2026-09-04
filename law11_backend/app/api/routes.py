@@ -1,4 +1,5 @@
 import re, json, asyncio, time
+from datetime import date
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse, HTMLResponse, Response
 from typing import AsyncGenerator, List, Optional
@@ -20,6 +21,7 @@ async_engine = settings.async_engine
 # ✅ Tool 모듈 로드
 from app.tools import (
     law_rag_tool,
+    case_law_rag_tool,
     news_tool,
     blog_tool,
     general_tool,
@@ -101,6 +103,44 @@ async def save_citations(assistant_id: int, citations: List[dict]) -> None:
         logger.error(f"⚠️ [Citation 저장 실패] {e}")
 
 
+async def save_case_citations(assistant_id: int, citations: List[dict]) -> None:
+    """판례 인용을 case_citations 테이블에 저장. 스키마가 law citations와 달라
+    (사건번호/법원명 등) 별도 테이블 사용. 오류 발생 시 무시.
+
+    ⚠️ case_law_rag_tool의 citations는 judgment_date를 문자열("YYYY-MM-DD")로
+    담아 온다 (Qdrant payload가 date 객체를 못 담아 str()로 저장했기 때문 —
+    case_law_updater_async.py 참고). DATE 컬럼에 문자열을 그대로 바인딩하면
+    asyncpg가 타입 에러를 낸다 (실측 확인) — 여기서 date 객체로 변환한다.
+    """
+    if not citations:
+        return
+    sql = text("""
+        INSERT INTO case_citations (chat_history_id, case_name, case_number, court_name, judgment_date, score, rank)
+        VALUES (:chat_history_id, :case_name, :case_number, :court_name, :judgment_date, :score, :rank)
+    """)
+    try:
+        async with async_engine.begin() as conn:
+            for c in citations:
+                raw_date = c.get("judgment_date")
+                parsed_date = None
+                if raw_date:
+                    try:
+                        parsed_date = date.fromisoformat(str(raw_date)[:10])
+                    except ValueError:
+                        parsed_date = None
+                await conn.execute(sql, {
+                    "chat_history_id": assistant_id,
+                    "case_name": c.get("case_name", ""),
+                    "case_number": c.get("case_number", ""),
+                    "court_name": c.get("court_name", ""),
+                    "judgment_date": parsed_date,
+                    "score": c.get("score"),
+                    "rank": c.get("rank"),
+                })
+    except Exception as e:
+        logger.error(f"⚠️ [Case Citation 저장 실패] {e}")
+
+
 # ─────────────────────────────
 # 🧠 Tool 실행기 (비동기)
 # ─────────────────────────────
@@ -111,6 +151,7 @@ async def run_tool(plan) -> AsyncGenerator[ToolChunk, None]:
 
     tool_map = {
         "law_rag_tool": law_rag_tool,
+        "case_law_rag_tool": case_law_rag_tool,
         "news_tool": news_tool,
         "blog_tool": blog_tool,
         "websearch_tool": websearch_tool,
@@ -196,7 +237,11 @@ async def ask_law11(request: QueryRequest):
                 return
             try:
                 assistant_id = await save_chat_history(user_id, request.question, full_answer, final_tool_name, session_id=session_id)
-                await save_citations(assistant_id, pending_citations)
+                # case_law_rag_tool 결과는 스키마가 달라(사건번호/법원명 등) 별도 테이블에 저장
+                if plan.tool == "case_law_rag_tool":
+                    await save_case_citations(assistant_id, pending_citations)
+                else:
+                    await save_citations(assistant_id, pending_citations)
                 yield f"data: {json.dumps({'event': 'saved', 'payload': str(assistant_id)})}\n\n"
                 yield f"data: {ToolChunk(type='status', payload='✅ 대화 저장 완료').to_json()}\n\n"
             except Exception as e:

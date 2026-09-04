@@ -85,13 +85,31 @@ LABELED_CASES: List[Dict] = [
     # (DB는 주간 동기화라 최신 개정 반영이 늦을 수 있음) → non-law가 정답
     {"question": "2025년에 바뀐 법 내용은?",                      "label": "non-law"},
     {"question": "건설 현장 안전 어떻게 해야 해?",               "label": "law"},
+
+    # ── 판례 (case-law) ── law/non-law 이분법에 묶지 않고 별도 라벨로 분리한다.
+    # law_rag_tool로 오분류(예: 법령명+"판례" 동시 포함 질의가 _CORE_LAWS에 먼저
+    # 걸리는 경우)되면 이 라벨이 잡아낸다.
+    {"question": "산업안전보건법 관련 대법원 판례 있어?",         "label": "case-law"},
+    {"question": "대법원 2024도5902 판결 내용 알려줘",            "label": "case-law"},
+    {"question": "중대재해처벌법 판례 알려줘",                    "label": "case-law"},
+    {"question": "계단 안전성 평가 관련 판례를 알려줘",           "label": "case-law"},
+    {"question": "산업안전보건법 위반 관련 판례 있어?",           "label": "case-law"},
+    {"question": "안전조치 의무 위반 대법원 판결 사례는?",        "label": "case-law"},
+    {"question": "중대재해처벌등에관한법률 관련 법원 판단 사례 알려줘", "label": "case-law"},
+    {"question": "2019다12345 판결 요지가 뭐야?",                 "label": "case-law"},
+    {"question": "산업안전보건법 제38조 관련 선고 사례 있어?",    "label": "case-law"},
+    {"question": "경영책임자 처벌 관련 대법원 판례 찾아줘",       "label": "case-law"},
+    {"question": "재난및안전관리기본법 관련 판결 사례는?",        "label": "case-law"},
 ]
 
 LAW_TOOLS = {"law_rag_tool"}
+CASE_LAW_TOOLS = {"case_law_rag_tool"}
 NON_LAW_TOOLS = {"news_tool", "blog_tool", "websearch_tool", "general_tool", "db_query_tool_async"}
 
 
 def keyword_label(tool: str) -> str:
+    if tool in CASE_LAW_TOOLS:
+        return "case-law"
     return "law" if tool in LAW_TOOLS else "non-law"
 
 
@@ -103,8 +121,9 @@ ROUTER_SYSTEM = """너는 법령 챗봇의 질문 분류기다.
 직접 관련된 질문인지 분류해.
 
 대답은 반드시 다음 중 하나만:
-  law      — 법령 조문 조회, 법적 기준, 처벌, 의무, 안전 기준 등
-  non-law  — 뉴스, 블로그, 외국 법령, 감정 대화, 일상 대화, 법령과 무관
+  law       — 법령 조문 조회, 법적 기준, 처벌, 의무, 안전 기준 등
+  case-law  — 판례, 판결, 대법원/법원 판단 사례 조회 (조문이 아닌 법원의 실제 판단)
+  non-law   — 뉴스, 블로그, 외국 법령, 감정 대화, 일상 대화, 법령과 무관
 
 단어 하나만 출력해. 설명 금지."""
 
@@ -121,6 +140,8 @@ async def llm_classify(question: str) -> str:
             max_tokens=5,
         )
         raw = resp.choices[0].message.content.strip().lower()
+        if "case-law" in raw or "case" in raw:
+            return "case-law"
         return "law" if "law" in raw and "non" not in raw else "non-law"
     except Exception as e:
         print(f"  ⚠️ LLM 분류 오류: {e}")
