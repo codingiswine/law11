@@ -276,6 +276,7 @@ class AsyncCaseLawUpdater:
                 full_text = EXCLUDED.full_text,
                 referenced_statutes = EXCLUDED.referenced_statutes,
                 referenced_cases = EXCLUDED.referenced_cases,
+                source_law_norm = EXCLUDED.source_law_norm,
                 updated_at = CURRENT_TIMESTAMP;
         """)
         async with self.engine.begin() as conn:
