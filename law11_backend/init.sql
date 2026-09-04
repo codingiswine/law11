@@ -54,6 +54,34 @@ CREATE INDEX IF NOT EXISTS idx_law_chunks_composite ON law_chunks(law_name_norm,
 CREATE INDEX IF NOT EXISTS idx_law_chunks_enforcement_date ON law_chunks(enforcement_date DESC);
 
 -- ─────────────────────────────
+-- ⚖️ Case Law Chunks Table (판례)
+-- ─────────────────────────────
+CREATE TABLE IF NOT EXISTS case_law_chunks (
+    id SERIAL PRIMARY KEY,
+    prec_serial_no INTEGER UNIQUE NOT NULL,
+    case_name VARCHAR(500),
+    case_number VARCHAR(100),
+    case_number_norm VARCHAR(100),
+    court_name VARCHAR(255),
+    court_type_code VARCHAR(20),
+    judgment_date DATE,
+    case_type_name VARCHAR(100),
+    judgment_type VARCHAR(100),
+    holding_summary TEXT,
+    ruling_gist TEXT,
+    full_text TEXT,
+    referenced_statutes TEXT,
+    referenced_cases TEXT,
+    source_law_norm VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_case_law_chunks_prec_id ON case_law_chunks(prec_serial_no);
+CREATE INDEX IF NOT EXISTS idx_case_law_chunks_case_number_norm ON case_law_chunks(case_number_norm);
+CREATE INDEX IF NOT EXISTS idx_case_law_chunks_source_law_norm ON case_law_chunks(source_law_norm);
+
+-- ─────────────────────────────
 -- 🔄 Auto-update trigger for updated_at
 -- ─────────────────────────────
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -68,6 +96,9 @@ CREATE TRIGGER update_chat_history_updated_at BEFORE UPDATE ON chat_history
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_law_chunks_updated_at BEFORE UPDATE ON law_chunks
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_case_law_chunks_updated_at BEFORE UPDATE ON case_law_chunks
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ─────────────────────────────
@@ -99,6 +130,24 @@ CREATE TABLE IF NOT EXISTS citations (
 
 CREATE INDEX IF NOT EXISTS idx_citations_chat_history_id ON citations(chat_history_id);
 CREATE INDEX IF NOT EXISTS idx_citations_law_name ON citations(law_name);
+
+-- ─────────────────────────────
+-- 📌 Case Citations Table (판례 인용)
+-- ─────────────────────────────
+CREATE TABLE IF NOT EXISTS case_citations (
+    id SERIAL PRIMARY KEY,
+    chat_history_id INTEGER REFERENCES chat_history(id) ON DELETE CASCADE,
+    case_name VARCHAR(500),
+    case_number VARCHAR(100),
+    court_name VARCHAR(255),
+    judgment_date DATE,
+    score FLOAT,
+    rank INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_case_citations_chat_history_id ON case_citations(chat_history_id);
+CREATE INDEX IF NOT EXISTS idx_case_citations_case_number ON case_citations(case_number);
 
 -- Grant permissions
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO daniel;

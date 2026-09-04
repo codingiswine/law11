@@ -70,6 +70,7 @@ async_engine = create_async_engine(
 QDRANT_HOST = os.getenv("QDRANT_HOST", "qdrant")
 QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
 QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "laws")
+QDRANT_CASE_LAW_COLLECTION_NAME = os.getenv("QDRANT_CASE_LAW_COLLECTION_NAME", "case_laws")
 
 qdrant_client = AsyncQdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, timeout=60.0)
 
