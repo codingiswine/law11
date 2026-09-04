@@ -11,6 +11,8 @@ interface ChatMessageProps {
   onFeedback?: (messageId: number, value: 1 | -1) => void;
   sources?: LawSource[];
   onLawClick?: (ref: LawReference) => void;
+  originalQuestion?: string;
+  onViewCaseLaw?: (question: string) => void;
 }
 
 interface MarkdownProps {
@@ -22,7 +24,7 @@ interface LinkProps {
   children?: React.ReactNode;
 }
 
-const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, messageId, feedback, onFeedback, sources, onLawClick }) => {
+const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, messageId, feedback, onFeedback, sources, onLawClick, originalQuestion, onViewCaseLaw }) => {
   const isUser = role === "user";
 
   if (isUser) {
@@ -139,6 +141,25 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, messageId, fee
               </button>
             );
           })}
+        </div>
+      )}
+
+      {sources && sources.length > 0 && originalQuestion && onViewCaseLaw && (
+        <div style={{ marginTop: "8px" }}>
+          <button
+            onClick={() => onViewCaseLaw(originalQuestion)}
+            style={{
+              fontSize: "0.75rem",
+              padding: "5px 12px",
+              borderRadius: "12px",
+              border: "1px solid #d1d5db",
+              background: "#fff",
+              cursor: "pointer",
+              color: "#4b5563",
+            }}
+          >
+            📋 관련 판례 보기
+          </button>
         </div>
       )}
 

@@ -31,6 +31,7 @@ from eval.retriever import retrieve_and_generate
 # RAGAS
 from ragas import evaluate
 from ragas.metrics import faithfulness, answer_relevancy, context_precision, context_recall
+from ragas.run_config import RunConfig
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from ragas.llms import LangchainLLMWrapper
 from ragas.embeddings import LangchainEmbeddingsWrapper
@@ -158,9 +159,16 @@ def compute_ragas(pipeline_results: List[Dict]) -> Dict[str, float]:
         "contexts":     [r["contexts"]     for r in valid],
         "ground_truth": [r["ground_truth"] for r in valid],
     })
+    # ⚠️ RAGAS 기본 동시성(max_workers=16)이 gpt-4o-mini 조직 TPM 한도(200,000)를
+    # 순식간에 넘겨 judge 호출이 대량 실패한 것을 실측 확인(2026-09-04) — 실패 시
+    # RAGAS는 해당 지표를 None으로 채우고 집계에서 조용히 스킵해, "회귀"처럼
+    # 보이는 가짜 저점(예: answer_relevancy 0.57→0.0003)이 나온다. max_workers=3도
+    # timeout이 남아있어(실측) 순차 실행(1)으로 신뢰성을 우선한다 — 회귀 확인은
+    # 자주 도는 핫패스가 아니라 느려도 괜찮다.
     score = evaluate(
         dataset=ds,
         metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
+        run_config=RunConfig(max_workers=1, timeout=180),
     )
     return score.to_pandas().mean(numeric_only=True).to_dict()
 

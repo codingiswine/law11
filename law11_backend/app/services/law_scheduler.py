@@ -26,6 +26,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.tools.law_updater_async import AsyncLawUpdater
+from app.tools.case_law_updater_async import AsyncCaseLawUpdater
 
 _scheduler: Optional[AsyncIOScheduler] = None
 
@@ -40,6 +41,19 @@ async def run_law_update():
         logger.info("[LawScheduler] 법령 최신화 완료")
     except Exception as e:
         logger.error(f"[LawScheduler] 법령 최신화 실패: {e}")
+        raise
+
+
+async def run_case_law_update():
+    """판례 최신화 실행 — 스케줄러 & 수동 트리거 공용"""
+    started_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    logger.info(f"[LawScheduler] 판례 최신화 시작: {started_at}")
+    try:
+        async with AsyncCaseLawUpdater() as updater:
+            await updater.update_all()
+        logger.info("[LawScheduler] 판례 최신화 완료")
+    except Exception as e:
+        logger.error(f"[LawScheduler] 판례 최신화 실패: {e}")
         raise
 
 
@@ -60,9 +74,22 @@ def start_scheduler():
         misfire_grace_time=3600,  # 1시간 내 지연 허용
     )
 
+    # 매주 월요일 새벽 4시 (법령 최신화와 1시간 오프셋 — 동시 부하 회피)
+    _scheduler.add_job(
+        run_case_law_update,
+        trigger="cron",
+        day_of_week="mon",
+        hour=4,
+        minute=0,
+        id="weekly_case_law_update",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
     _scheduler.start()
     next_run = _scheduler.get_job("weekly_law_update").next_run_time
-    logger.info(f"[LawScheduler] 스케줄러 시작 — 다음 실행: {next_run}")
+    next_case_run = _scheduler.get_job("weekly_case_law_update").next_run_time
+    logger.info(f"[LawScheduler] 스케줄러 시작 — 다음 실행: {next_run} / 판례: {next_case_run}")
 
 
 def stop_scheduler():

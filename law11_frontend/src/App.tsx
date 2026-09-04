@@ -53,6 +53,10 @@ function App() {
     setHistoryVersion(v => v + 1); // 새로 저장된 대화가 사이드바 목록에 바로 반영되도록
   }, []);
 
+  const handleViewCaseLaw = useCallback((question: string) => {
+    handleSearch(`${question} 관련 판례`);
+  }, []);
+
   const handleLawClick = useCallback((ref: LawReference) => {
     setSelectedLaw(prev =>
       prev && prev.name === ref.lawName && prev.article === ref.articleNumber
@@ -154,6 +158,7 @@ function App() {
                   onStreamError={handleStreamError}
                   onFeedback={handleFeedback}
                   onLawClick={handleLawClick}
+                  onViewCaseLaw={handleViewCaseLaw}
                 />
               </div>
             </main>

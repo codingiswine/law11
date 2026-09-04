@@ -41,6 +41,7 @@ interface ChatWindowProps {
   onStreamError?: (message: string) => void;
   onFeedback?: (messageId: number, value: 1 | -1) => void;
   onLawClick?: (ref: LawReference) => void;
+  onViewCaseLaw?: (question: string) => void;
 }
 
 const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -52,6 +53,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onStreamError,
   onFeedback,
   onLawClick,
+  onViewCaseLaw,
 }) => {
   const [displayedAnswer, setDisplayedAnswer] = useState("");
   const [statusMessages, setStatusMessages] = useState<string[]>([]);
@@ -316,6 +318,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           onFeedback={onFeedback}
           sources={msg.sources}
           onLawClick={onLawClick}
+          originalQuestion={idx > 0 ? messages[idx - 1]?.content : undefined}
+          onViewCaseLaw={onViewCaseLaw}
         />
       ))}
 
