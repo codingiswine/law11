@@ -64,6 +64,31 @@ async def test_detect_tool_recent_thing_not_mistaken_for_legal_basis():
 
 
 @pytest.mark.asyncio
+async def test_detect_tool_fast_path_case_law_keyword():
+    """fast-path(판례 키워드) → LLM 분류 없이 case_law_rag_tool"""
+    with patch("app.services.question_router._classify_with_llm", new_callable=AsyncMock) as mock_llm, \
+         patch("app.services.question_router._load_session_context", new_callable=AsyncMock, return_value=""):
+        plan = await detect_tool("user1", "산업안전보건법 관련 대법원 판례 있어?")
+
+    mock_llm.assert_not_called()
+    assert plan.tool == "case_law_rag_tool"
+
+
+@pytest.mark.asyncio
+async def test_detect_tool_case_law_keyword_beats_core_law_name():
+    """회귀 테스트(2026-09): 법령명(_CORE_LAWS)과 판례 키워드가 동시에 있으면
+    case_law_rag_tool로 가야 한다 — _CASE_LAW_KEYWORDS 체크가 _CORE_LAWS/
+    _ARTICLE_NUMBER_PATTERN 체크보다 먼저 오지 않으면 law_rag_tool로
+    오분류된다 (case_law_rag_tool.py 구현 당시 실측 확인된 순서 의존성)."""
+    with patch("app.services.question_router._classify_with_llm", new_callable=AsyncMock) as mock_llm, \
+         patch("app.services.question_router._load_session_context", new_callable=AsyncMock, return_value=""):
+        plan = await detect_tool("user1", "중대재해처벌법 판례 알려줘")
+
+    mock_llm.assert_not_called()
+    assert plan.tool == "case_law_rag_tool"
+
+
+@pytest.mark.asyncio
 async def test_detect_tool_llm_non_law_tool():
     """LLM이 news_tool 선택 → 그대로 news_tool"""
     _llm_cache.clear()
