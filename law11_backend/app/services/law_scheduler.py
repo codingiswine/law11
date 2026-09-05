@@ -30,6 +30,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from app.tools.law_updater_async import AsyncLawUpdater
 from app.tools.case_law_updater_async import AsyncCaseLawUpdater
+from app.services.backup_service import backup_chat_history
 
 _scheduler: Optional[AsyncIOScheduler] = None
 
@@ -89,10 +90,25 @@ def start_scheduler():
         misfire_grace_time=3600,
     )
 
+    # 매일 새벽 5시 (법령/판례 최신화와 겹치지 않는 시간대) — chat_history는
+    # 매일 바뀌므로 주간이 아니라 일간으로 백업한다.
+    _scheduler.add_job(
+        backup_chat_history,
+        trigger="cron",
+        hour=5,
+        minute=0,
+        id="daily_chat_backup",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
     _scheduler.start()
     next_run = _scheduler.get_job("weekly_law_update").next_run_time
     next_case_run = _scheduler.get_job("weekly_case_law_update").next_run_time
-    logger.info(f"[LawScheduler] 스케줄러 시작 — 다음 실행: {next_run} / 판례: {next_case_run}")
+    next_backup_run = _scheduler.get_job("daily_chat_backup").next_run_time
+    logger.info(
+        f"[LawScheduler] 스케줄러 시작 — 다음 실행: {next_run} / 판례: {next_case_run} / 백업: {next_backup_run}"
+    )
 
 
 def stop_scheduler():

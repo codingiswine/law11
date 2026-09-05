@@ -64,6 +64,7 @@ cache/
 llex_backend/.cache/
 law11_backend/.cache/
 .pytest_cache/
+backups/
 
 # =========================================
 # 📊 EVAL RESULTS (베이스라인 기준점, 커밋 금지)
