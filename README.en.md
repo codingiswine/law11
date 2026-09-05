@@ -21,7 +21,7 @@ All numbers are reproducible from the eval scripts in this repo (30-case correct
 |---|---|
 | Retrieval Top-3 recall | **96.7%** (30-case golden set; multi-accepted-article policy #30, statutory-term query expansion #33) |
 | RAGAS Faithfulness / Answer Relevancy / Context Precision / Context Recall | **0.74 / 0.57 / 1.00 / 0.92** (gpt-4o-mini judge, re-measured 2026-09-05 after fixing RAGAS's own Korean-encoding bug, #40) |
-| Hallucination safe rate | **100%** (0/30 HALLUCINATION) · 28/30 GROUNDED · 0 citation misses (the judge's own false flags were fixed in #46, with detection power re-verified against 4 fabricated answers) |
+| Hallucination (30-case golden set) | **0/30 outright fabrications** · 28/30 GROUNDED (93.3%; the other 2 are PARTIAL — imprecise phrasing, not false claims) · 0 citation misses — the judge's own false flags were fixed in #46, with detection power re-verified against 4 fabricated answers. **Scoped to the 9 laws in the DB; it does not cover out-of-scope questions that fall through to web search** |
 | Router accuracy | **43/43 (100%)** (keyword fast-path + LLM hybrid, incl. 11 case-law routing cases) |
 | Multi-turn regression evals | 5 scenarios, each **mutation-tested** (fix reverted → eval must fail) |
 | Automated tests / CI | 68 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |

@@ -64,7 +64,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 |---|---|
 | 검색 Top-3 recall | **96.7%** (골든셋 30케이스 · 복수 인정 조문 정책 #30 · 법령 용어 매핑 #33) |
 | RAGAS Faithfulness / Answer Relevancy / Context Precision / Context Recall | **0.74 / 0.57 / 1.00 / 0.92** (30케이스, gpt-4o-mini judge · #40에서 RAGAS 자체의 한국어 인코딩 버그를 근본 수정한 뒤의 값 — answer_relevancy는 #39에서 지표 제외했다가 복구됨) |
-| 할루시네이션 안전율 | **100%** (HALLUCINATION 0/30) · GROUNDED 28/30(93.3%) · Citation 누락 0건 (판정기 자체의 거짓 지적을 #46에서 수정하고 조작 답변 4종 음성 대조군으로 탐지력 유지 확인) |
+| 할루시네이션 (골든셋 30케이스) | **명백한 날조 0/30** · GROUNDED 28/30(93.3%, 나머지 2건은 표현이 뭉개진 PARTIAL) · Citation 누락 0건 — 판정기 자체의 거짓 지적을 #46에서 수정하고 조작 답변 4종 음성 대조군으로 탐지력 유지 확인. **DB에 있는 9개 법령 범위 내 결과이며, 범위 밖 질문(웹 폴백 경로)까지 보증하지 않습니다** |
 | 라우터 정확도 | **43/43 (100%)** (키워드 fast-path + LLM 하이브리드, 판례 라우팅 케이스 11개 포함 · #38) |
 | 멀티턴 회귀 eval | 시나리오 5개 — 전부 **mutation test**(fix 되돌리기)로 회귀 감지력 검증 |
 | 자동화 테스트 / CI | pytest 68개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
