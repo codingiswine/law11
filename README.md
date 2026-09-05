@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.9.1-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -1088,6 +1088,18 @@ cd law11_backend && python -m eval.eval_multiturn
 **검증**: 컨테이너 재기동 후 3개 job(법령/판례/백업) 전부 정상 등록 확인. 수동 트리거로 실제 525건 정상 백업 확인(필드 정상). pytest 66개 무회귀.
 
 **의미**: 이걸로 2026-07-18에 시작된 강화 백로그가 전부 완료됐다.
+
+---
+
+### 45. "적용 기준" 섹션의 출처 없는 일반론 제거 `v1.9.1`
+
+**배경**: 골든셋 30케이스로 답변 정확도를 재점검하는 과정에서 (RAGAS 회귀 없음, 할루시네이션 0%, 안전 응답율 100% 확인) 할루시네이션 판정기가 3건을 PARTIAL로 판정했다. 그중 2건("중대시민재해/중대산업재해 처벌 기준")을 실측으로 파고들자 두 가지 원인이 겹쳐 있었다: (A) 처벌 조문(제10조·제6조)이 검색되면 그 본문이 인용하는 의무 조문(제9조·제4/5조) 자체는 함께 검색되지 않는 문제, (B) 답변의 "🔹 적용 기준/적용 방법" 섹션이 어떤 조문에도 안 묶인 일반적 안전관리 조언("안전 관리 체계를 강화하고...")을 만들어내는 문제. 프로덕션 `law_rag_tool`로 직접 재현해 두 원인이 실사용자 답변에도 그대로 나타남을 확인했다(eval 전용 아티팩트가 아니었다).
+
+**수정**: 원인 B부터 처리. `law_rag_tool.py`의 4개 프롬프트 분기(Qdrant 의미검색·web fallback ×2·PG 직접조회) 모두에서 "적용 기준/적용 방법" 지시를 "(실무에서 지켜야 할 사항)"에서 "(제공된 조문에 명시된 사항만 정리 — 조문에 없는 일반적 안전관리 조언은 쓰지 마)"로 변경.
+
+**검증**: 같은 질문을 프로덕션 `law_rag_tool.run()`으로 재실행해 "적용 기준" 섹션이 더 이상 출처 없는 조언을 포함하지 않음을 직접 확인(before/after 답변 비교). pytest 19개(law_rag_helpers, question_router) 무회귀.
+
+**남은 과제**: 원인 A(교차 참조 조문 미검색)는 이번 수정 범위 밖 — 여전히 해당 케이스의 PARTIAL 판정을 완전히 해소하지는 못했다(원인이 B 하나에서 A 하나로 좁혀졌을 뿐). 처벌 조문 검색 시 본문에 언급된 교차 참조 조문을 자동으로 함께 검색하는 로직은 후속 작업으로 남겨둔다.
 
 ---
 
