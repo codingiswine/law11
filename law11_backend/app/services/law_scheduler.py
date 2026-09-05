@@ -11,14 +11,17 @@ FastAPI lifespan에서 start/stop된다.
 """
 
 import sys
-import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-logger = logging.getLogger("law_scheduler")
+# ⚠️ logging.getLogger("law_scheduler")는 core/logger.py가 붙여주는 핸들러가
+# 없어 어디에도(콘솔/파일) 출력되지 않았다 — 실측 확인(2026-09-05, "스케줄러가
+# 실제로 도는지" 확인하려는데 로그 자체가 완전히 비어있어서 발견). 앱 전역에서
+# 쓰는 core.logger.law11_logger로 교체.
+from core.logger import law11_logger as logger
 
 # law_updater_async.py가 law11_backend/app/tools/ 아래에 있음
 BACKEND_ROOT = Path(__file__).parent.parent.parent
