@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.2-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.9.3-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -1114,6 +1114,22 @@ cd law11_backend && python -m eval.eval_multiturn
 **검증(음성 대조군 필수)**: 프롬프트를 느슨하게 만들어 수치만 좋아 보이게 하는 걸 막기 위해, 조작한 거짓 답변 4종(처벌 수치 조작 / 없는 적용요건 삽입 / 없는 의무 창작 / 존재하지 않는 제999조 인용)을 함께 돌려 **4건 전부 HALLUCINATION으로 탐지**됨을 확인했다. 결과: GROUNDED 27/30(90.0%) → **28/30(93.3%)**, 할루시네이션율 0% 유지. 남은 PARTIAL 2건은 답변이 실제로 뭉갠 표현("(다른 유형)", "이 외에도 ~ 기준이 있으며")이라 정당한 지적으로 판단해 그대로 뒀다. 지적 문장이 답변 원문에 실재하는지도 프로그램으로 대조 확인(구 프롬프트는 의역해 지적했음).
 
 **의미**: 지표가 나빴던 원인이 제품이 아니라 **측정 도구**에 있었던 사례. 가설을 세우고 통제 실험으로 기각한 뒤 진짜 원인을 찾는 과정을 그대로 남긴다.
+
+---
+
+### 47. 관리자 엔드포인트 무인증 노출 + 질문 길이 무제한 수정 `v1.9.3`
+
+**배경**: 백엔드 보안 점검 중 발견. 좋았던 점(PG·Qdrant의 `127.0.0.1` 바인딩 #`9d9c230`, CORS 화이트리스트, 전 쿼리 바인딩 파라미터, `crypto.randomUUID()` 기반 session_id)과 별개로 두 가지 구멍이 있었다.
+
+**결함 1 — 관리자 엔드포인트에 인증이 전혀 없음**: `POST /api/admin/update-laws`와 `POST /api/admin/backup-chat-history`가 무인증이었다. 백엔드는 프론트에 서비스해야 하므로 `0.0.0.0:8000`으로 열리고, EC2에 올리면 보안 그룹이 유일한 방어선이 된다. 악용 시 (a) 법령 전체 재수집 = OpenAI 임베딩 수천 건 호출로 월 예산 소진, (b) `chat_history` 전체 덤프 + 응답에 파일 경로 노출.
+
+**결함 2 — `question` 필드에 길이 제한 없음**: `question: str`에 `max_length`가 없어, 거대한 본문이 그대로 임베딩·GPT 호출로 들어가는 비용 증폭/DoS 경로였다.
+
+**수정**: ① `settings.ADMIN_API_KEY` 추가 + `require_admin_key` 의존성으로 `X-Admin-Key` 헤더 검사. 키 미설정 시 통과가 아니라 **503으로 비활성화(fail-closed)** 하고, 비교는 `secrets.compare_digest`로 상수 시간 처리해 타이밍 공격을 피한다. ② `question`에 `Field(max_length=1000)`.
+
+**검증**: 4가지 경우를 실제 호출로 확인 — 키 미설정 → 503, 헤더 없음 → 401, 틀린 키 → 401, 올바른 키 → 200. `update-laws`도 동일하게 차단됨. 길이 제한은 1001자 → 422 거부, 1000자(경계값) → 200 통과. pytest 68개 무회귀.
+
+**남겨둔 것**: 세션 소유권 검사(`GET/DELETE /api/session/{id}`가 소유자를 확인하지 않음 — session_id가 UUID4라 열거는 불가하나 유출 시 열람·삭제 가능)와 rate limiting은 신원 모델이 필요한 구조 변경이라 이번 범위 밖으로 뒀다. 현재 `user_id`는 `"law11_user"` 하드코딩으로, 단일 사용자 전제 위에 서 있다.
 
 ---
 
