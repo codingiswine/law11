@@ -58,3 +58,11 @@ async def trigger_law_update():
     import asyncio
     asyncio.create_task(run_law_update())
     return {"status": "started", "message": "법령 최신화가 백그라운드에서 시작됐습니다."}
+
+
+@app.post("/api/admin/backup-chat-history", tags=["admin"])
+async def trigger_chat_backup():
+    """chat_history 즉시 백업 (수동 트리거)"""
+    from app.services.backup_service import backup_chat_history
+    path = await backup_chat_history()
+    return {"status": "done", "path": str(path)}

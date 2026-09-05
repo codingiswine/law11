@@ -13,6 +13,7 @@ services:
       - ./law11_backend/eval:/app/eval
       - ./law11_backend/.env:/app/.env
       - ./.cache:/app/.cache
+      - ./backups:/app/backups
     env_file:
       - ./law11_backend/.env
     environment:
