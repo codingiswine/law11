@@ -87,6 +87,14 @@ NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 # ─────────────────────────────
+# 🔐 관리자 엔드포인트 인증
+# ─────────────────────────────
+# /api/admin/* 는 법령 전체 재수집(임베딩 수천 건 = 비용 발생)과 chat_history
+# 덤프를 트리거하므로 인증이 필요하다. 미설정 시 해당 엔드포인트는 503으로
+# 비활성화된다(fail-closed) — 키가 없다고 무인증으로 열어두면 안 되기 때문.
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY")
+
+# ─────────────────────────────
 # 🌐 CORS 설정
 # ─────────────────────────────
 # .env의 CORS_ORIGINS(콤마 구분)로 배포 도메인 추가. 미설정 시 로컬 개발 기본값 사용.
