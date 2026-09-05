@@ -22,7 +22,7 @@ All numbers are reproducible from the eval scripts in this repo (measured 2026-0
 | Hallucination safe rate | **96.7%** (LLM-judge, 0 citation misses) |
 | Router accuracy | **32/32 (100%)** (keyword fast-path + LLM hybrid) |
 | Multi-turn regression evals | 5 scenarios, each **mutation-tested** (fix reverted → eval must fail) |
-| Automated tests / CI | 58 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
+| Automated tests / CI | 66 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
 | Load test | 20 concurrent users, zero failures (2× the design target) |
 | Fault injection | 5 dependencies (PG, Qdrant, OpenAI, Tavily, Naver) killed individually — 4 defects found and fixed (#31) |
 | Documented find-fix cycles | 37 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |

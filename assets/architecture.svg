@@ -55,12 +55,14 @@
   <!-- other tools -->
   <rect x="620" y="310" width="220" height="230" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.4"/>
   <text x="730" y="335" text-anchor="middle" font-size="13" font-weight="700" fill="#334155">그 외 도구</text>
-  <text x="640" y="365" font-size="12" fill="#334155">· db_query_tool_async</text>
-  <text x="640" y="390" font-size="12" fill="#334155">  (session_id 격리)</text>
-  <text x="640" y="415" font-size="12" fill="#334155">· news_tool</text>
-  <text x="640" y="440" font-size="12" fill="#334155">· blog_tool</text>
-  <text x="640" y="465" font-size="12" fill="#334155">· websearch_tool</text>
-  <text x="640" y="490" font-size="12" fill="#334155">· general_tool</text>
+  <text x="640" y="360" font-size="12" fill="#334155">· case_law_rag_tool</text>
+  <text x="640" y="380" font-size="11" fill="#64748b">  (판례, 클릭 시 조회)</text>
+  <text x="640" y="402" font-size="12" fill="#334155">· db_query_tool_async</text>
+  <text x="640" y="422" font-size="11" fill="#64748b">  (session_id 격리)</text>
+  <text x="640" y="444" font-size="12" fill="#334155">· news_tool</text>
+  <text x="640" y="464" font-size="12" fill="#334155">· blog_tool</text>
+  <text x="640" y="484" font-size="12" fill="#334155">· websearch_tool</text>
+  <text x="640" y="504" font-size="12" fill="#334155">· general_tool</text>
 
   <line x1="700" y1="250" x2="340" y2="310" stroke="#2563eb" stroke-width="1.6" marker-end="url(#a2)"/>
   <line x1="700" y1="250" x2="730" y2="310" stroke="#64748b" stroke-width="1.5" marker-end="url(#a1)"/>
@@ -90,11 +92,11 @@
 
   <rect x="100" y="660" width="200" height="60" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.6"/>
   <text x="200" y="686" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">PostgreSQL</text>
-  <text x="200" y="704" text-anchor="middle" font-size="11" fill="#64748b">law_chunks · chat_history</text>
+  <text x="200" y="704" text-anchor="middle" font-size="10.5" fill="#64748b">law_chunks · case_law_chunks 등</text>
 
   <rect x="330" y="660" width="200" height="60" rx="8" fill="#ffffff" stroke="#2563eb" stroke-width="1.6"/>
   <text x="430" y="686" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">Qdrant</text>
-  <text x="430" y="704" text-anchor="middle" font-size="11" fill="#64748b">laws 컬렉션 (벡터)</text>
+  <text x="430" y="704" text-anchor="middle" font-size="11" fill="#64748b">laws · case_laws 컬렉션</text>
 
   <rect x="560" y="660" width="200" height="60" rx="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
   <text x="660" y="686" text-anchor="middle" font-size="13" font-weight="600" fill="#0f172a">OpenAI API</text>
@@ -112,7 +114,7 @@
   <!-- Supporting infra -->
   <rect x="1020" y="660" width="320" height="60" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
   <text x="1180" y="686" text-anchor="middle" font-size="13" font-weight="600" fill="#78350f">APScheduler</text>
-  <text x="1180" y="704" text-anchor="middle" font-size="11" fill="#92400e">매주 월 3AM 법령 자동 갱신</text>
+  <text x="1180" y="704" text-anchor="middle" font-size="10.5" fill="#92400e">월 3AM 법령·4AM 판례·매일 5AM 백업</text>
 
   <!-- Monitoring -->
   <rect x="1020" y="740" width="320" height="60" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
@@ -122,6 +124,6 @@
   <!-- CI/eval -->
   <rect x="60" y="800" width="1280" height="90" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
   <text x="90" y="828" font-size="14" font-weight="700" fill="#14532d">검증 파이프라인 (커밋마다 자동 실행)</text>
-  <text x="90" y="855" font-size="12.5" fill="#166534">GitHub Actions CI → pytest 58개 · RAGAS 회귀 하니스(5% 하락 시 실패 처리) · 멀티턴 회귀 eval · 부하테스트(20명 무결함) · 장애 주입 테스트(의존성 5종)</text>
-  <text x="90" y="876" font-size="12" fill="#166534">→ changelog 44건(37+7) 기록, 결함 26건 근본원인 분석·수정</text>
+  <text x="90" y="855" font-size="12.5" fill="#166534">GitHub Actions CI → pytest 66개 · RAGAS 회귀 하니스(5% 하락 시 실패 처리) · 멀티턴 회귀 eval · 부하테스트(20명 무결함) · 장애 주입 테스트(의존성 5종)</text>
+  <text x="90" y="876" font-size="12" fill="#166534">→ changelog 51건(44+7) 기록, 결함 44건 근본원인 분석·수정</text>
 </svg>
