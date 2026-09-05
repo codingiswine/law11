@@ -46,16 +46,47 @@ GROUNDED      : 답변의 구체적 주장(수치, 조건, 의무)이 모두 조
 PARTIAL       : 일부는 조문 기반, 일부는 조문에 없는 내용 포함
 HALLUCINATION : 조문에 없는 수치, 기간, 조건, 처벌 내용을 주장
 
+[판정 규칙 — 반드시 지켜]
+1. 문제를 지적하려면 그 문장을 답변에서 **그대로 복사**해 suspicious_claims에 넣어.
+   답변에 없는 문장을 지어내서 지적하지 말고, 요약·의역해서 지적하지도 마.
+2. 지적하기 전에 제공된 조문을 처음부터 다시 훑어봐. 그 내용이 조문 어딘가에
+   있으면 지적하면 안 된다.
+3. 조문 원문을 그대로 옮긴 부분은 GROUNDED다. 특히 답변이 어떤 조문의 처벌·요건을
+   설명하면서 그 조문 본문에 적혀 있는 다른 조문 번호를 함께 옮겨 적은 경우
+   (예: 제10조가 "제9조를 위반하여 …"라고 규정하므로 답변도 "제9조를 위반하여"라고
+   쓴 경우), 그 다른 조문(제9조)의 본문이 제공되지 않았더라도 GROUNDED다.
+   제공된 조문에 그 문구가 적혀 있다는 것 자체가 근거다.
+   **이런 교차 참조를 이유로 PARTIAL을 주지 마.**
+4. **누락은 결함이 아니다.** 조문의 일부를 설명하지 않았거나 더 자세히 쓰지 않은 건
+   PARTIAL 사유가 아니다. PARTIAL/HALLUCINATION은 조문에 **없는 내용을 더한**
+   경우에만 해당한다.
+5. 지적할 문장이 하나도 없으면 GROUNDED다. 억지로 흠을 찾지 마.
+
 [출력 형식 - JSON 그대로]
 {
   "verdict": "GROUNDED" | "PARTIAL" | "HALLUCINATION",
   "reason": "한 문장 이유",
-  "suspicious_claims": ["조문 근거 없는 주장1", "주장2"]  // PARTIAL/HALLUCINATION 시만
+  "suspicious_claims": ["답변에서 그대로 복사한 문장1", "문장2"]  // PARTIAL/HALLUCINATION 시만
 }"""
 
 
+def _article_label(text: str) -> str:
+    """조문 본문 첫머리의 '제N조'를 라벨로 뽑는다.
+
+    ⚠️ 컨텍스트를 '[조문 1]', '[조문 2]' 같은 일련번호로만 라벨링하면, 답변이
+    "제383조"라고 인용했을 때 판정기가 5개 블록 본문을 일일이 뒤져야 하고 자주
+    놓친다 — 실측(2026-09-05): 제383조·제672조·제348조가 모두 검색 결과 안에
+    있었는데도 "제공된 조문에 없다"며 PARTIAL로 오판했다. 라벨에 실제 조문번호를
+    박아 대조 자체를 불필요하게 만든다.
+    """
+    m = re.match(r"\s*(제\d+조(?:의\d+)?)", text)
+    return m.group(1) if m else "조문번호 미상"
+
+
 async def judge_single(question: str, answer: str, contexts: List[str]) -> Dict[str, Any]:
-    ctx_block = "\n\n".join(f"[조문 {i+1}]\n{c}" for i, c in enumerate(contexts[:5]))
+    ctx_block = "\n\n".join(
+        f"[조문 {i+1} — {_article_label(c)}]\n{c}" for i, c in enumerate(contexts[:5])
+    )
     user_msg = f"""[사용자 질문]
 {question}
 
