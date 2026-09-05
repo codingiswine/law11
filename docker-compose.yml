@@ -4,7 +4,7 @@ services:
   fastapi:
     build: ./law11_backend
     container_name: law11_backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
     ports:
       - "8000:8000"
     volumes:

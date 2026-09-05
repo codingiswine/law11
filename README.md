@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.8.4-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.8.5-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -70,7 +70,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 자동화 테스트 / CI | pytest 66개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 (설계 목표 10명의 2배) |
 | 장애 주입 테스트 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 — 결함 4건 발견·수정 (#31) |
-| 문서화된 발견-수정 사이클 | changelog 42건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
+| 문서화된 발견-수정 사이클 | changelog 43건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
 
 **시스템 개요**:
 
@@ -1066,6 +1066,16 @@ cd law11_backend && python -m eval.eval_multiturn
 **수정**: Branch A(의미검색) 스트리밍 완료 후, 검색된 각 조문(`article_display()`)이 실제 답변 텍스트에 등장하는지 코드로 재확인한다. 빠진 게 있으면 "📎 함께 검색된 조문(위 답변에 직접 인용되지 않음, 참고): [...]" footer를 추가로 붙인다 — 프롬프트가 아니라 코드가 보장하는 안전망이라 GPT의 순응 여부와 무관하게 항상 작동한다.
 
 **검증**: 같은 질문으로 3회 재현 — 3회 모두 빠진 조문이 정확히 감지되어 footer에 표시됨(2건, 2건, 3건 각각 다르게 누락됐지만 전부 잡아냄). pytest 66개 무회귀.
+
+---
+
+### 43. law_scheduler 로깅 버그 수정 + uvicorn 워커 중복 스케줄러 제거 `v1.8.5`
+
+**문제**: "APScheduler로 최신화하는 게 실제로 맞냐"는 질문에 확인하던 중, `law_scheduler.py`가 `logging.getLogger("law_scheduler")`라는 `core/logger.py`의 핸들러가 안 붙은 로거를 쓰고 있어 로그가 콘솔·파일 어디에도 전혀 안 찍히고 있었던 걸 발견했다. 로거를 고쳐 컨테이너를 재시작해보니 스케줄러 시작 로그가 **정확히 2번** 찍혔다 — `uvicorn --workers 2`라 워커 프로세스마다 독립적으로 스케줄러가 떠서, 월요일 새벽 법령/판례 최신화가 워커 수만큼 중복 실행될 위험이 있었다.
+
+**수정**: `law_scheduler.py`의 로거를 `core.logger.law11_logger`로 교체. `docker-compose.yml`의 uvicorn `--workers 2`를 `--workers 1`로 축소해 스케줄러가 한 번만 뜨도록 구조적으로 제거(락 메커니즘 대신 가장 단순한 방법 선택).
+
+**검증**: 재시작 후 스케줄러 로그 1회만 출력 확인(다음 실행: 2026-09-07 03:00/04:00). 워커 1개로 줄인 뒤 부하테스트 재실행 — 10명 동시 20/20 성공, 20명 동시 40/40 성공(기존 문서화된 20명 무실패 기준 유지, TTFB/Total 지연도 기존과 비슷하거나 더 나음).
 
 ---
 
