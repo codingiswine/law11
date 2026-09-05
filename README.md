@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.8.2-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.8.3-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -70,7 +70,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 자동화 테스트 / CI | pytest 66개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 (설계 목표 10명의 2배) |
 | 장애 주입 테스트 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 — 결함 4건 발견·수정 (#31) |
-| 문서화된 발견-수정 사이클 | changelog 40건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
+| 문서화된 발견-수정 사이클 | changelog 41건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
 
 **시스템 개요**:
 
@@ -1046,6 +1046,16 @@ cd law11_backend && python -m eval.eval_multiturn
 **수정**: `harness.py`에 `Prompt.format`을 `ensure_ascii=False`로 고친 몽키패치 추가 (라이브러리 원본 로직과 100% 동일, `json.dumps` 인자 하나만 다름 — 버전 업그레이드는 API가 많이 바뀌어 위험이 커서 이 메서드 하나만 국소 교체). 같은 근본 원인이었으므로 `answer_relevancy`도 함께 복구.
 
 **검증**: 몽키패치 적용 전/후로 동일 예시("산업안전보건법 제17조") statements 추출을 재현 — 적용 전엔 무관한 내용, 적용 후엔 실제 조문 내용 그대로 정확히 추출됨. `answer_relevancy`의 noncommittal 오분류도 재현 안 됨(3회 연속 `noncommittal: 0`, 질문도 정확). 골든셋 30케이스 전체 재실행: Faithfulness 0.69, Answer Relevancy 0.57(과거 정상 범위 0.57–0.59와 일치), Context Precision 1.00, Context Recall 0.93 — 전부 회귀 없음.
+
+---
+
+### 41. GPT 호출에 명시적 timeout 추가 `v1.8.3`
+
+**문제**: `law_rag_tool.py`/`case_law_rag_tool.py`의 GPT 호출 6곳 전부 timeout이 없어 openai SDK 기본값(10분)이 그대로 적용되고 있었다. 하나의 요청이 오래 매달리면 uvicorn `--workers 2`(동시 10명 설계 목표) 안에서 다른 사용자 요청까지 지연될 수 있는 구조적 위험이었고, 사용자가 "생성 중지"를 직접 누르지 않는 한 자동으로 안 끊겼다.
+
+**수정**: `settings.py`에 `GPT_TIMEOUT_SECONDS = 60` 상수를 추가하고 6개 호출부 전부에 적용.
+
+**검증**: 정상 질의 응답 속도(수 초)엔 영향 없음 확인, pytest 66개 무회귀, 컨테이너 재빌드 후 라이브 질의로 정상 동작 확인.
 
 ---
 
