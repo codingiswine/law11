@@ -30,11 +30,39 @@ from eval.retriever import retrieve_and_generate
 
 # RAGAS
 from ragas import evaluate
-from ragas.metrics import faithfulness, context_precision, context_recall
+from ragas.metrics import faithfulness, answer_relevancy, context_precision, context_recall
 from ragas.run_config import RunConfig
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from ragas.llms import LangchainLLMWrapper
+from ragas.embeddings import LangchainEmbeddingsWrapper
 from datasets import Dataset
+
+# ⚠️ ragas==0.1.21의 Prompt.format()이 json.dumps(value)를 ensure_ascii=True
+# (기본값)로 호출해 한국어 입력이 \uXXXX 이스케이프로 깨진 채 LLM에 전달됨을
+# 실측 확인(2026-09-05) — GPT가 "산업안전보건법 제17조"를 미국 수정헌법
+# 17조로 착각해 답변하는 등 완전히 무관한 내용을 만들어냈다(faithfulness의
+# statements 추출 단계, answer_relevancy의 질문 생성 단계 모두 동일 경로).
+# Prompt.format을 ensure_ascii=False로 고쳐 몽키패치한다 — 라이브러리
+# 업그레이드는 API가 많이 바뀌어 위험이 크고, 이 메서드 하나만 국소
+# 교체하는 게 가장 작은 개입이다. 원본 로직(ragas/llms/prompt.py)과
+# 100% 동일, json.dumps 호출의 ensure_ascii 인자만 다르다.
+import json as _json
+from ragas.llms.prompt import Prompt as _Prompt, PromptValue as _PromptValue
+
+
+def _patched_format(self, **kwargs):
+    if set(self.input_keys) != set(kwargs.keys()):
+        raise ValueError(
+            f"Input variables {self.input_keys} do not match with the given parameters {list(kwargs.keys())}"
+        )
+    for key, value in kwargs.items():
+        if isinstance(value, str):
+            kwargs[key] = _json.dumps(value, ensure_ascii=False)
+    prompt = self.to_string()
+    return _PromptValue(prompt_str=prompt.format(**kwargs))
+
+
+_Prompt.format = _patched_format
 
 # ────────────────────────────────────────────
 # 경로
@@ -58,22 +86,22 @@ METRIC_THRESHOLDS = {"faithfulness": 0.15}
 _ragas_llm = LangchainLLMWrapper(
     ChatOpenAI(model="gpt-4o-mini", api_key=settings.OPENAI_API_KEY)
 )
-for _m in [faithfulness, context_precision, context_recall]:
+_ragas_emb = LangchainEmbeddingsWrapper(
+    OpenAIEmbeddings(model="text-embedding-3-large", api_key=settings.OPENAI_API_KEY)
+)
+for _m in [faithfulness, answer_relevancy, context_precision, context_recall]:
     _m.llm = _ragas_llm
+answer_relevancy.embeddings = _ragas_emb
 
-# ⚠️ answer_relevancy는 harness 지표에서 제외했다 (실측 확인, 2026-09-04).
-# RAGAS 0.1.21의 noncommittal 판정(회피성 답변이면 유사도와 무관하게 점수를
-# 강제로 0으로 만드는 로직)이 영어 few-shot 예시로만 하드코딩돼 있어, 한국어
-# 법령 답변을 거의 매번 noncommittal=1로 오분류해 점수가 0에 수렴했다.
-# answer_relevancy.adapt("korean")로 프롬프트를 한국어로 번역해봐도 (1) 번역
-# 캐시 자체가 가끔 깨진 JSON을 만들어 크래시했고 (2) 번역이 성공해도
-# noncommittal 오분류는 그대로였다 — RAGAS의 로컬라이제이션 메커니즘 자체가
-# 한국어에서 신뢰할 수 없다는 뜻. Faithfulness/Context Precision/Context
-# Recall 3개는 이런 언어 종속 분류 단계가 없어 정상 작동한다.
+# answer_relevancy는 2026-09-04에 한 차례 제외했었다 (noncommittal 오분류로
+# 점수가 0에 수렴) — 원인을 더 파보니 위 _patched_format 몽키패치와 근본
+# 원인이 같았다(한국어가 \uXXXX로 깨져 GPT가 못 읽음). 몽키패치 적용 후
+# noncommittal 오분류가 재현되지 않는 것을 직접 확인(2026-09-05)해 복구.
 
-METRICS_ORDER = ["faithfulness", "context_precision", "context_recall"]
+METRICS_ORDER = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
 METRICS_LABEL = {
     "faithfulness":      "Faithfulness",
+    "answer_relevancy":  "Answer Relevancy",
     "context_precision": "Context Precision",
     "context_recall":    "Context Recall",
 }
@@ -174,7 +202,7 @@ def compute_ragas(pipeline_results: List[Dict]) -> Dict[str, float]:
     # 넘는 경우가 실측 확인됨(2026-09-04) — 동시성과 무관한 API 응답 지연.
     score = evaluate(
         dataset=ds,
-        metrics=[faithfulness, context_precision, context_recall],
+        metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
         run_config=RunConfig(max_workers=1, timeout=300),
     )
     return score.to_pandas().mean(numeric_only=True).to_dict()

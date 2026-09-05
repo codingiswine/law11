@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.8.1-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.8.2-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -63,14 +63,14 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 지표 | 수치 |
 |---|---|
 | 검색 Top-3 recall | **96.7%** (골든셋 30케이스 · 복수 인정 조문 정책 #30 · 법령 용어 매핑 #33) |
-| RAGAS Faithfulness / Context Recall | **0.44–0.55 / 0.82–0.85** (30케이스, gpt-4o-mini judge, 2026-09-04 재측정 · 2026-07-19엔 0.71–0.86/0.93이었음 — 그 사이 `eval/requirements-eval.txt`의 langchain-openai/openai 버전이 새로 갱신되며 judge 채점 자체가 달라진 것으로 추정, 원인 미확정 · answer_relevancy는 한국어에서 구조적으로 신뢰 불가로 판정돼 지표에서 제외됨(#39)) |
+| RAGAS Faithfulness / Answer Relevancy / Context Precision / Context Recall | **0.69 / 0.57 / 1.00 / 0.93** (30케이스, gpt-4o-mini judge, 2026-09-05 재측정 · #40에서 RAGAS 자체의 한국어 인코딩 버그를 근본 수정한 뒤의 값 — answer_relevancy는 #39에서 지표 제외했다가 이번에 복구됨) |
 | 할루시네이션 안전율 | **96.7%** (LLM-judge 30케이스 · Citation 누락 0건) |
 | 라우터 정확도 | **43/43 (100%)** (키워드 fast-path + LLM 하이브리드, 판례 라우팅 케이스 11개 포함 · #38) |
 | 멀티턴 회귀 eval | 시나리오 5개 — 전부 **mutation test**(fix 되돌리기)로 회귀 감지력 검증 |
 | 자동화 테스트 / CI | pytest 66개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 (설계 목표 10명의 2배) |
 | 장애 주입 테스트 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 — 결함 4건 발견·수정 (#31) |
-| 문서화된 발견-수정 사이클 | changelog 39건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
+| 문서화된 발견-수정 사이클 | changelog 40건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
 
 **시스템 개요**:
 
@@ -1036,6 +1036,16 @@ cd law11_backend && python -m eval.eval_multiturn
 **수정 3**: `harness.py`에서 `answer_relevancy`를 지표 목록에서 제거(Faithfulness/Context Precision/Context Recall 3개만 사용 — 이 셋은 언어 종속 분류 단계가 없어 정상 작동). 겸사겸사 RAGAS 기본 동시성(max_workers=16)이 gpt-4o-mini 조직 TPM 한도를 순식간에 넘겨 judge 호출이 대량 실패하던 것도 확인해 `max_workers=1`(순차 실행)으로 낮췄고, 순차 실행에도 개별 호출이 180초를 넘는 경우가 있어 `timeout=300`으로 상향.
 
 **검증**: `python -m eval.harness` 재실행(30케이스, timeout 없이 깨끗하게 통과) — Faithfulness/Context Recall 둘 다 직전 대비 +4%, 회귀 없음. 그 전 실행에서 나타난 Context Recall -6%는 timeout으로 표본 2개가 빠진 노이즈였음을 timeout 여유를 늘려 재확인.
+
+---
+
+### 40. RAGAS Faithfulness/answer_relevancy 근본 원인 확정 및 수정 — 한국어 인코딩 버그 `v1.8.2`
+
+**문제**: #39에서 `answer_relevancy`를 제외했지만 `faithfulness`도 2026-07-19 대비(0.71–0.86 → 0.44–0.55) 계속 낮게 나와 원인을 더 파봤다. `ragas==0.1.21`의 `Prompt.format()`이 입력 문자열을 프롬프트에 끼워넣기 전에 `json.dumps(value)`를 호출하는데, Python `json.dumps`의 기본값 `ensure_ascii=True` 때문에 **한글을 포함한 모든 비-ASCII 문자가 `\uXXXX` 이스케이프로 깨진 채 GPT에 전달**되고 있었다. 실제 프롬프트를 직접 출력해 확인: `question: "산업안전..."` — GPT는 이걸 못 읽고 "제17조"라는 숫자만 보고 **미국 수정헌법 제17조(상원의원 직선제)**, **어떤 책의 17장** 등 완전히 무관한 내용을 3회 재현 모두 일관되게 지어냈다. 이게 faithfulness의 statements 추출 단계와 answer_relevancy의 질문 생성 단계 양쪽에서 일어나는, `Prompt` 클래스를 쓰는 모든 RAGAS 지표에 공통된 버그였다 — #39의 answer_relevancy 버그와 이번 faithfulness 하락이 사실 같은 근본 원인.
+
+**수정**: `harness.py`에 `Prompt.format`을 `ensure_ascii=False`로 고친 몽키패치 추가 (라이브러리 원본 로직과 100% 동일, `json.dumps` 인자 하나만 다름 — 버전 업그레이드는 API가 많이 바뀌어 위험이 커서 이 메서드 하나만 국소 교체). 같은 근본 원인이었으므로 `answer_relevancy`도 함께 복구.
+
+**검증**: 몽키패치 적용 전/후로 동일 예시("산업안전보건법 제17조") statements 추출을 재현 — 적용 전엔 무관한 내용, 적용 후엔 실제 조문 내용 그대로 정확히 추출됨. `answer_relevancy`의 noncommittal 오분류도 재현 안 됨(3회 연속 `noncommittal: 0`, 질문도 정확). 골든셋 30케이스 전체 재실행: Faithfulness 0.69, Answer Relevancy 0.57(과거 정상 범위 0.57–0.59와 일치), Context Precision 1.00, Context Recall 0.93 — 전부 회귀 없음.
 
 ---
 
