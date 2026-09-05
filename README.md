@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.8.5-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.9.0-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -70,7 +70,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 자동화 테스트 / CI | pytest 66개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 (설계 목표 10명의 2배) |
 | 장애 주입 테스트 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 — 결함 4건 발견·수정 (#31) |
-| 문서화된 발견-수정 사이클 | changelog 43건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
+| 문서화된 발견-수정 사이클 | changelog 44건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
 
 **시스템 개요**:
 
@@ -1076,6 +1076,18 @@ cd law11_backend && python -m eval.eval_multiturn
 **수정**: `law_scheduler.py`의 로거를 `core.logger.law11_logger`로 교체. `docker-compose.yml`의 uvicorn `--workers 2`를 `--workers 1`로 축소해 스케줄러가 한 번만 뜨도록 구조적으로 제거(락 메커니즘 대신 가장 단순한 방법 선택).
 
 **검증**: 재시작 후 스케줄러 로그 1회만 출력 확인(다음 실행: 2026-09-07 03:00/04:00). 워커 1개로 줄인 뒤 부하테스트 재실행 — 10명 동시 20/20 성공, 20명 동시 40/40 성공(기존 문서화된 20명 무실패 기준 유지, TTFB/Total 지연도 기존과 비슷하거나 더 나음).
+
+---
+
+### 44. chat_history 일일 백업 cron 추가 `v1.9.0`
+
+**배경**: 2026-07-18 강화 백로그의 마지막 남은 항목. pg_dump 바이너리를 앱 컨테이너에 새로 설치하지 않기 위해, 이미 DB 접속 정보를 갖고 있는 SQLAlchemy로 직접 SELECT해 JSON으로 직렬화하는 방식을 택했다.
+
+**구현**: `app/services/backup_service.py` 신규 — `chat_history` 전체를 JSON 파일로 덤프, 최근 30개(약 한 달치)만 보관하고 오래된 건 자동 삭제. `law_scheduler.py`에 매일 새벽 5시(법령 03:00·판례 04:00와 안 겹치는 시간대) `daily_chat_backup` job 추가. `POST /api/admin/backup-chat-history`로 수동 트리거도 가능. `docker-compose.yml`에 `./backups:/app/backups` 볼륨 마운트 추가(`.gitignore` 처리, 백업 파일은 커밋 대상 아님).
+
+**검증**: 컨테이너 재기동 후 3개 job(법령/판례/백업) 전부 정상 등록 확인. 수동 트리거로 실제 525건 정상 백업 확인(필드 정상). pytest 66개 무회귀.
+
+**의미**: 이걸로 2026-07-18에 시작된 강화 백로그가 전부 완료됐다.
 
 ---
 
