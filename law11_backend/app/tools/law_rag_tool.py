@@ -355,6 +355,8 @@ async def run(plan):
 
 출력 형식:
 🔹 **결론** (한 문장 요약, 존댓말)
+🔹 **판단 근거** (이 조문이 적용되는 상황 조건·요건 — 조문에 "~하는 경우",
+  "~한 때" 등 적용 조건이 명시돼 있으면 반드시 그 조건을 밝혀, 존댓말)
 🔹 **법적 근거**
   - [법령명] 제X조 제X항: (조문 원문 또는 핵심 내용)
 🔹 **적용 기준** (실무에서 지켜야 할 사항, 존댓말)
@@ -372,10 +374,26 @@ async def run(plan):
                     temperature=0.2,
                     stream=True,
                 )
+                answer_parts = []
                 async for chunk in stream:
                     delta = chunk.choices[0].delta.content
                     if delta:
+                        answer_parts.append(delta)
                         yield ToolChunk(type="text", payload=delta)
+
+                # ⚠️ 프롬프트 지시("빠짐없이 인용")만으로는 GPT가 가끔 검색된 조문
+                # 일부를 답변에서 빠뜨린다 (실측 확인, 2026-09-05 — 5개 중 2개
+                # 누락되는 재현 사례 발견, temperature=0.2라 완전히 결정적이지
+                # 않음). 코드 레벨에서 한 번 더 확인해 빠진 조문이 있으면 footer로
+                # 명시한다 — 사용자가 검색은 됐지만 답변엔 없는 조문을 놓치지 않게.
+                full_answer = "".join(answer_parts)
+                missing = [c for c in citations if article_display(c["article_number"]) not in full_answer]
+                if missing:
+                    missing_str = ", ".join(
+                        f"[{c['law_name']} {article_display(c['article_number'])}]" for c in missing
+                    )
+                    footer = f"\n\n📎 **함께 검색된 조문** (위 답변에 직접 인용되지 않음, 참고): {missing_str}"
+                    yield ToolChunk(type="text", payload=footer)
 
                 yield ToolChunk(type="source", payload={"retrieved_laws": citations})
                 yield ToolChunk(type="status", payload="✅ 법령 검색 완료")

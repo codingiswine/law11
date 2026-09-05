@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.8.3-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.8.4-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -70,7 +70,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 자동화 테스트 / CI | pytest 66개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 (설계 목표 10명의 2배) |
 | 장애 주입 테스트 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 — 결함 4건 발견·수정 (#31) |
-| 문서화된 발견-수정 사이클 | changelog 41건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
+| 문서화된 발견-수정 사이클 | changelog 42건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
 
 **시스템 개요**:
 
@@ -1056,6 +1056,16 @@ cd law11_backend && python -m eval.eval_multiturn
 **수정**: `settings.py`에 `GPT_TIMEOUT_SECONDS = 60` 상수를 추가하고 6개 호출부 전부에 적용.
 
 **검증**: 정상 질의 응답 속도(수 초)엔 영향 없음 확인, pytest 66개 무회귀, 컨테이너 재빌드 후 라이브 질의로 정상 동작 확인.
+
+---
+
+### 42. 인용 누락 재발 방지 — 코드 레벨 안전망 추가 `v1.8.4`
+
+**문제**: #39에서 "검색된 조문을 전부 검토하고 빠짐없이 인용하라"는 프롬프트 지시를 추가했는데, "계단 안전성 평가" 질문을 반복 실측해보니 여전히 가끔(3회 중 3회 재현) 5개 중 2~3개(주로 52조·13조)를 답변에서 빠뜨렸다. `temperature=0.2`인 이상 프롬프트 지시만으론 100% 보장이 안 된다는 뜻 — retrieval은 매번 동일한 5개를 정확히 찾아오는데, 생성 단계에서만 확률적으로 누락됐다.
+
+**수정**: Branch A(의미검색) 스트리밍 완료 후, 검색된 각 조문(`article_display()`)이 실제 답변 텍스트에 등장하는지 코드로 재확인한다. 빠진 게 있으면 "📎 함께 검색된 조문(위 답변에 직접 인용되지 않음, 참고): [...]" footer를 추가로 붙인다 — 프롬프트가 아니라 코드가 보장하는 안전망이라 GPT의 순응 여부와 무관하게 항상 작동한다.
+
+**검증**: 같은 질문으로 3회 재현 — 3회 모두 빠진 조문이 정확히 감지되어 footer에 표시됨(2건, 2건, 3건 각각 다르게 누락됐지만 전부 잡아냄). pytest 66개 무회귀.
 
 ---
 
