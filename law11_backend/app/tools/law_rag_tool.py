@@ -364,6 +364,7 @@ async def run(plan):
 
                 stream = await settings.openai_client.chat.completions.create(
                     model="gpt-4o-mini",
+                    timeout=settings.GPT_TIMEOUT_SECONDS,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
                         {"role": "user", "content": _prepend_context(context, prompt)},
@@ -397,6 +398,7 @@ async def run(plan):
         web_summary = web_result.get("summaries", "")
         resp = await settings.openai_client.chat.completions.create(
             model="gpt-4o-mini",
+            timeout=settings.GPT_TIMEOUT_SECONDS,
             messages=[
                 {"role": "system", "content": WEB_SYSTEM_PROMPT},
                 {"role": "user", "content": _prepend_context(context, f"""질문: {query}
@@ -553,6 +555,7 @@ async def run(plan):
         web_summary = web_result.get("summaries", "")
         resp = await settings.openai_client.chat.completions.create(
             model="gpt-4o-mini",
+            timeout=settings.GPT_TIMEOUT_SECONDS,
             messages=[
                 {"role": "system", "content": WEB_SYSTEM_PROMPT},
                 {"role": "user", "content": _prepend_context(context, f"""질문: {query}
@@ -638,6 +641,7 @@ async def run(plan):
     try:
         stream = await settings.openai_client.chat.completions.create(
             model="gpt-4o-mini",
+            timeout=settings.GPT_TIMEOUT_SECONDS,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": _prepend_context(context, prompt)},

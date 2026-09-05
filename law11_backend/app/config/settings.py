@@ -37,6 +37,11 @@ if not OPENAI_API_KEY:
 # ✅ 비동기 클라이언트 (한 번만 생성해서 재사용)
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY, project=OPENAI_PROJECT_ID)
 
+# ⚠️ openai SDK 기본 timeout(10분)은 실제 사용자 질문 처리엔 너무 길다 — 하나의
+# 요청이 오래 매달리면 uvicorn --workers 2(동시 10명 설계 목표) 안에서 다른
+# 사용자 요청까지 지연될 수 있다. 명시적으로 짧게 잡아 빠르게 실패시킨다.
+GPT_TIMEOUT_SECONDS = 60
+
 # ─────────────────────────────
 # 🗄️ PostgreSQL 설정 (비동기 엔진)
 # ─────────────────────────────
