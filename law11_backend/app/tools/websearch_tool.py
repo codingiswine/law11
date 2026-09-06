@@ -158,7 +158,7 @@ async def summarize_web(query: str, max_results: int = 8, context: str = "") -> 
 
     try:
         completion = await settings.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.LLM_MODEL,
             messages=messages,
             temperature=0.4,
             max_tokens=700,

@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.3-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.9.4-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -70,7 +70,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 자동화 테스트 / CI | pytest 68개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 (설계 목표 10명의 2배) |
 | 장애 주입 테스트 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 — 결함 4건 발견·수정 (#31) |
-| 문서화된 발견-수정 사이클 | changelog 46건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
+| 문서화된 발견-수정 사이클 | changelog 48건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
 
 **시스템 개요**:
 
@@ -1130,6 +1130,18 @@ cd law11_backend && python -m eval.eval_multiturn
 **검증**: 4가지 경우를 실제 호출로 확인 — 키 미설정 → 503, 헤더 없음 → 401, 틀린 키 → 401, 올바른 키 → 200. `update-laws`도 동일하게 차단됨. 길이 제한은 1001자 → 422 거부, 1000자(경계값) → 200 통과. pytest 68개 무회귀.
 
 **남겨둔 것**: 세션 소유권 검사(`GET/DELETE /api/session/{id}`가 소유자를 확인하지 않음 — session_id가 UUID4라 열거는 불가하나 유출 시 열람·삭제 가능)와 rate limiting은 신원 모델이 필요한 구조 변경이라 이번 범위 밖으로 뒀다. 현재 `user_id`는 `"law11_user"` 하드코딩으로, 단일 사용자 전제 위에 서 있다.
+
+---
+
+### 48. 모델명 하드코딩 제거 — `settings` 단일 소스로 통합 `v1.9.4`
+
+**배경**: `model="gpt-4o-mini"`가 14개 파일에 문자열로 흩어져 있었다(생성 10곳·라우팅 1곳·판정 2곳·eval 5곳, 총 18곳). Qdrant 컬렉션명은 `settings.QDRANT_COLLECTION_NAME`으로 잘 빼뒀으면서(CLAUDE.md에 "하드코딩 금지"로 명시) 모델명에는 같은 규칙이 적용돼 있지 않았다. 지금은 전부 같은 값이라 문제가 드러나지 않지만, 모델을 바꾸려면 18곳을 전부 찾아야 하고 일부만 바꿔 생성·판정 모델이 어긋나는 사고가 나기 쉬운 구조였다.
+
+**수정**: `settings.LLM_MODEL`·`settings.EMBEDDING_MODEL` 추가(환경변수 오버라이드 가능, 기본값은 기존 값 그대로) 후 18곳 + 임베딩 3곳을 전부 치환. 대상 14개 파일이 이미 `settings`를 import하고 있어 import 추가는 없었다.
+
+**검증**: 하드코딩 잔여 0건(주석 제외), pytest 68개 무회귀, 컨테이너 재기동 후 `settings.LLM_MODEL`이 정상 로드되고 실제 질의("산업안전보건법 제17조")가 380자 정상 응답하는 것까지 확인.
+
+**의미**: 모델 티어링(난이도별로 모델을 나눠 쓰는 것)은 지금 미적용인데, 하려면 이 정리가 선행돼야 했다. 이제 상수를 추가하고 호출부에서 고르기만 하면 된다.
 
 ---
 

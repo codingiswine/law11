@@ -87,6 +87,17 @@ NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 
 # ─────────────────────────────
+# 🤖 모델 지정 (단일 소스)
+# ─────────────────────────────
+# 예전엔 model="gpt-4o-mini"가 14개 파일에 문자열로 흩어져 있어, 모델을 바꾸려면
+# 전부 찾아 고쳐야 했고 일부만 바꿔 불일치가 나기 쉬웠다. 컬렉션명(QDRANT_*)과
+# 같은 규칙으로 여기 한 곳에서만 관리한다.
+# ⚠️ 생성·라우팅·판정이 모두 같은 모델을 쓰는 게 현재 설계다(모델 티어링 미적용).
+#    난이도별로 나눌 일이 생기면 여기에 상수를 추가하고 호출부에서 골라 쓰면 된다.
+LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
+
+# ─────────────────────────────
 # 🔐 관리자 엔드포인트 인증
 # ─────────────────────────────
 # /api/admin/* 는 법령 전체 재수집(임베딩 수천 건 = 비용 발생)과 chat_history

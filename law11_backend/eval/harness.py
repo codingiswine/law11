@@ -84,10 +84,10 @@ METRIC_THRESHOLDS = {"faithfulness": 0.15}
 # RAGAS 설정 (gpt-4o-mini, 비용 절감)
 # ────────────────────────────────────────────
 _ragas_llm = LangchainLLMWrapper(
-    ChatOpenAI(model="gpt-4o-mini", api_key=settings.OPENAI_API_KEY)
+    ChatOpenAI(model=settings.LLM_MODEL, api_key=settings.OPENAI_API_KEY)
 )
 _ragas_emb = LangchainEmbeddingsWrapper(
-    OpenAIEmbeddings(model="text-embedding-3-large", api_key=settings.OPENAI_API_KEY)
+    OpenAIEmbeddings(model=settings.EMBEDDING_MODEL, api_key=settings.OPENAI_API_KEY)
 )
 for _m in [faithfulness, answer_relevancy, context_precision, context_recall]:
     _m.llm = _ragas_llm

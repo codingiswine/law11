@@ -131,7 +131,7 @@ ROUTER_SYSTEM = """너는 법령 챗봇의 질문 분류기다.
 async def llm_classify(question: str) -> str:
     try:
         resp = await settings.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.LLM_MODEL,
             messages=[
                 {"role": "system", "content": ROUTER_SYSTEM},
                 {"role": "user", "content": question},

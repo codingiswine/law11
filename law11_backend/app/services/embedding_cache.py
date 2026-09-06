@@ -57,7 +57,7 @@ async def get_embedding_async(query: str) -> List[float]:
         return cached
 
     response = await settings.openai_client.embeddings.create(
-        model="text-embedding-3-large",
+        model=settings.EMBEDDING_MODEL,
         input=query,
     )
     embedding = response.data[0].embedding

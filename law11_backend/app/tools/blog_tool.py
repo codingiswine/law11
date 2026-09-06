@@ -147,7 +147,7 @@ async def run(plan) -> AsyncGenerator[ToolChunk, None]:
 
     prompt = build_prompt(query, items)
     stream = await settings.openai_client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=settings.LLM_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.4,
         stream=True,
