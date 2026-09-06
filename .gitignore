@@ -79,3 +79,7 @@ law11_backend/eval/results/*.json
 docs/superpowers/
 .claude/
 
+
+# 로컬 잔여물
+.venv-old-py3122-backup/
+docs/.DS_Store
