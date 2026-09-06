@@ -136,7 +136,7 @@ async def _generate(question: str, contexts: List[str], retrieved_articles: List
     )
 
     response = await openai_client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=settings.LLM_MODEL,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_message},

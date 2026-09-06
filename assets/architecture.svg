@@ -125,5 +125,5 @@
   <rect x="60" y="800" width="1280" height="90" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
   <text x="90" y="828" font-size="14" font-weight="700" fill="#14532d">검증 파이프라인</text>
   <text x="90" y="855" font-size="12.5" fill="#166534">커밋마다 자동(GitHub Actions CI) → pytest 68개 · 프론트 typecheck/build   |   체크포인트마다 수동 → RAGAS 회귀 하니스(5% 하락 시 실패) · 멀티턴 회귀 eval · 부하테스트(20명 무결함) · 장애 주입(의존성 5종)</text>
-  <text x="90" y="876" font-size="12" fill="#166534">→ changelog 53건(46+7) 기록, 결함 46건 근본원인 분석·수정</text>
+  <text x="90" y="876" font-size="12" fill="#166534">→ changelog 55건(48+7) 기록, 결함 48건 근본원인 분석·수정</text>
 </svg>

@@ -49,10 +49,10 @@ RESULTS_DIR.mkdir(exist_ok=True)
 
 # RAGAS가 사용할 LLM을 gpt-4o-mini로 교체 (비용 절감)
 _ragas_llm = LangchainLLMWrapper(
-    ChatOpenAI(model="gpt-4o-mini", api_key=settings.OPENAI_API_KEY)
+    ChatOpenAI(model=settings.LLM_MODEL, api_key=settings.OPENAI_API_KEY)
 )
 _ragas_embeddings = LangchainEmbeddingsWrapper(
-    OpenAIEmbeddings(model="text-embedding-3-large", api_key=settings.OPENAI_API_KEY)
+    OpenAIEmbeddings(model=settings.EMBEDDING_MODEL, api_key=settings.OPENAI_API_KEY)
 )
 for _metric in [faithfulness, answer_relevancy, context_precision, context_recall]:
     _metric.llm = _ragas_llm

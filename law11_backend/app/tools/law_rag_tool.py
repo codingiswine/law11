@@ -365,7 +365,7 @@ async def run(plan):
 {combined}"""
 
                 stream = await settings.openai_client.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model=settings.LLM_MODEL,
                     timeout=settings.GPT_TIMEOUT_SECONDS,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
@@ -415,7 +415,7 @@ async def run(plan):
             return
         web_summary = web_result.get("summaries", "")
         resp = await settings.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.LLM_MODEL,
             timeout=settings.GPT_TIMEOUT_SECONDS,
             messages=[
                 {"role": "system", "content": WEB_SYSTEM_PROMPT},
@@ -572,7 +572,7 @@ async def run(plan):
             return
         web_summary = web_result.get("summaries", "")
         resp = await settings.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.LLM_MODEL,
             timeout=settings.GPT_TIMEOUT_SECONDS,
             messages=[
                 {"role": "system", "content": WEB_SYSTEM_PROMPT},
@@ -658,7 +658,7 @@ async def run(plan):
 
     try:
         stream = await settings.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.LLM_MODEL,
             timeout=settings.GPT_TIMEOUT_SECONDS,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},

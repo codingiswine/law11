@@ -27,7 +27,7 @@ async def grade_hallucination(question: str, answer: str, contexts: List[str]) -
     user_msg = f"[질문]\n{question}\n\n[검색된 조문]\n{ctx_block}\n\n[AI 답변]\n{answer}\n\nJSON만 출력해."
     try:
         resp = await settings.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.LLM_MODEL,
             messages=[
                 {"role": "system", "content": _HALLUCINATION_SYSTEM},
                 {"role": "user", "content": user_msg},
@@ -47,7 +47,7 @@ async def grade_relevance(question: str, answer: str) -> str:
     user_msg = f"[질문]\n{question}\n\n[AI 답변]\n{answer}\n\nJSON만 출력해."
     try:
         resp = await settings.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.LLM_MODEL,
             messages=[
                 {"role": "system", "content": _RELEVANCE_SYSTEM},
                 {"role": "user", "content": user_msg},

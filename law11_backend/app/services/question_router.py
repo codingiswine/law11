@@ -88,7 +88,7 @@ async def _classify_with_llm(question: str, history: str) -> str:
     context = f"이전 대화:\n{history}\n\n질문: {question}" if history.strip() else question
     try:
         resp = await _llm_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.LLM_MODEL,
             messages=[{"role": "system", "content": _LLM_SYSTEM}, {"role": "user", "content": context}],
             temperature=0,
             max_tokens=10,

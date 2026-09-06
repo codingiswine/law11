@@ -100,7 +100,7 @@ async def judge_single(question: str, answer: str, contexts: List[str]) -> Dict[
 
     try:
         resp = await settings.openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=settings.LLM_MODEL,
             messages=[
                 {"role": "system", "content": JUDGE_SYSTEM},
                 {"role": "user",   "content": user_msg},
