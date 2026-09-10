@@ -179,7 +179,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | `app/services/qa_logger.py` | Retrieval 메타데이터 JSONL 로깅 |
 | `app/services/metrics_service.py` | Prometheus 메트릭 수집 |
 | `app/api/routes.py` | SSE 엔드포인트, 세션 관리, Citation 저장, 품질 점수 |
-| `app/config/settings.py` | Pydantic-settings, 비동기 클라이언트 싱글턴 |
+| `app/config/settings.py` | 환경변수 로딩(python-dotenv) + 비동기 클라이언트 싱글턴 (OpenAI / Qdrant / SQLAlchemy) |
 | `app/tools/law_rag_tool.py` | 3단 검색 + Citation 이벤트 + 웹 fallback 인용 추출 |
 | `app/tools/law_updater_async.py` | 법제처 DRF API → PG + Qdrant 동기화 (비동기) |
 
@@ -1454,6 +1454,16 @@ curl -X POST http://localhost:8000/api/feedback \
 curl http://localhost:8000/api/metrics
 curl http://localhost:8000/api/metrics/summary
 ```
+
+### `GET /api/history/stats` — 대화 통계
+
+```bash
+curl http://localhost:8000/api/history/stats
+```
+
+### `GET /api/dashboard` — 운영 모니터링 대시보드 (HTML)
+
+브라우저에서 <http://localhost:8000/api/dashboard> 접속. 자세한 내용은 [운영 모니터링](#운영-모니터링) 참고.
 
 ---
 
