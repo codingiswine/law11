@@ -1,7 +1,7 @@
 # Law11 Changelog
 
 루트 [README.md](README.md)에서 옮겨온 발견·수정 이력입니다. 형식: **증상 → 근본 원인 → 실측 검증**.
-번호(#1~#51)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
+번호(#1~#52)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
 
 ## 목차
 
@@ -56,6 +56,7 @@
 - [49. README 고정 섹션·.env.example을 코드와 재동기화 v1.9.5](#49-readme-고정-섹션envexample을-코드와-재동기화-v195)
 - [50. README 압축 — 이력·상세 문서를 별도 파일로 분리 v1.9.6](#50-readme-압축--이력상세-문서를-별도-파일로-분리-v196)
 - [51. 앱 버전 하드코딩 제거 — settings.APP_VERSION 단일 소스화 v1.9.7](#51-앱-버전-하드코딩-제거--settingsapp_version-단일-소스화-v197)
+- [52. 코드 밖 문서가 코드와 어긋나 있던 문제 — GitHub About 설명과 DEPLOYMENT.md 무중단 표현](#52-코드-밖-문서가-코드와-어긋나-있던-문제--github-about-설명과-deploymentmd-무중단-표현)
 - [P1. 조문 본문의 항·호 번호 중복 + 인용 배지 순서/점수 불일치 2c8097e](#p1-조문-본문의-항호-번호-중복--인용-배지-순서점수-불일치-2c8097e)
 - [P2. 스트림 완료 콜백 경합 + confidence_score 불일치 764b646](#p2-스트림-완료-콜백-경합--confidence_score-불일치-764b646)
 - [P3. 웹 폴백 인용의 "0%" 관련도 배지 ffdcb2f](#p3-웹-폴백-인용의-0-관련도-배지-ffdcb2f)
@@ -899,6 +900,26 @@ cd law11_backend && python -m eval.eval_multiturn
 **수정**: `settings.APP_VERSION` 신설, `main.py`가 `version=settings.APP_VERSION`으로 읽음. README 배지는 정적 텍스트라 settings에서 읽을 수 없으므로, 대신 `tests/test_version.py`가 (1) `app.version == settings.APP_VERSION`, (2) `README.md`·`README.en.md` 배지 == `settings.APP_VERSION`을 검사해 드리프트를 CI에서 잡는다.
 
 **검증**: 컨테이너 재빌드 후 `curl localhost:8000/health` → `{"status":"ok","version":"1.9.7"}`. pytest 68 → 70개(신규 2) 통과.
+
+---
+
+### 52. 코드 밖 문서가 코드와 어긋나 있던 문제 — GitHub About 설명과 DEPLOYMENT.md 무중단 표현
+
+같은 날(2026-09-19) 발견된 "저장소 파일이 아닌 문서" 두 건. 둘 다 코드는 맞는데 코드 밖 문서가 옛 상태를 주장하고 있었다.
+
+**증상 ①** — GitHub 저장소 About 설명이 #25(v1.5.0)에서 제거된 Cross-Encoder Reranking을 여전히 기재. README "Reranking을 쓰지 않는 이유" 절과 정면 충돌 — 저장소 첫 화면의 한 줄 요약이 본문과 반대 주장을 하고 있었다.
+
+- 수정 전: (원문 미보존 — GitHub 웹 설정은 버전 관리 대상이 아니어서 이력이 남지 않음. 확인 가능한 사실: 제거된 Cross-Encoder Reranking을 기능으로 기재하고 있었음)
+- 수정 후 (2026-09-19 저장소 페이지에서 확인): "Domain-specific RAG for Korean industrial safety law. Tiered retrieval (exact match → vector → web fallback), Top-3 recall 96.7% on a 30-case golden set. Cross-encoder reranking removed after it measurably hurt Korean retrieval. FastAPI · Qdrant · React."
+- Topics: chatbot, docker, fastapi, korean-nlp, langgraph, legal-tech, llm, llm-evaluation, openai, postgresql, qdrant, rag, ragas, react, retrieval-augmented-generation, typescript, vector-search
+
+**증상 ②** — `DEPLOYMENT.md`의 재배포 절이 "무중단 업데이트"(절 제목 `:136`)·"무중단 재시작"(주석 `:146`)이라고 주장. 실제 명령은 `docker-compose up -d --no-deps --build fastapi` — `fastapi` 컨테이너가 하나뿐이라 기존 컨테이너를 stop하고 새 컨테이너를 start하는 동안 요청이 끊긴다. 앞단 프록시도, 두 번째 컨테이너도, 헬스체크 기반 교체도 없다. "DB·Qdrant 컨테이너는 건드리지 않는다"는 사실을 "무중단"으로 확대해 적은 것.
+
+**근본 원인**: 저장소 파일이 아닌 문서 — GitHub 메타데이터(About)와 운영 문서(DEPLOYMENT.md) — 가 #48(모델명)·#51(버전)의 단일 소스 동기화 대상에서 빠져 있었다. About은 git에 없어 diff·grep·테스트 어느 것에도 안 걸리고, DEPLOYMENT.md는 compose 구성과 대조하는 검사가 없었다. **코드 밖 문서도 동기화 대상**이며, 문서의 주장은 코드·설정에서 근거를 찾을 수 없으면 틀린 것으로 본다. 실제 재배포로 다운타임을 측정한 적도 없었다. 추가 교훈 — GitHub 메타데이터는 저장소 파일이 아니라 변경 이력이 남지 않는다. 코드 밖 문서는 어긋날 수 있을 뿐 아니라, 어긋났던 사실 자체를 사후에 확인할 수 없다. 그래서 이후 변경은 CHANGELOG에 직접 기록한다.
+
+**수정**: ① About을 README 서술과 일치하게 재작성(위 "수정 후"). ② `DEPLOYMENT.md` 절 제목을 "코드 업데이트 (재배포 — 다운타임 수 초~수십 초)"로, 주석 "무중단 재시작"을 "컨테이너 교체 (이 구간에 다운타임 발생)"로 바꾸고, 다운타임 구간(3번 단계: 컨테이너 교체 + uvicorn 기동 — `app/main.py:14-17` lifespan 스케줄러 시작, `settings.py` DB 풀·Qdrant 클라이언트 생성)과 빌드 단계(2번)가 다운타임에 포함되지 않는 이유를 명시. 무중단이 필요할 때의 조건(프록시 + 컨테이너 2개 + 헬스체크)을 적었다.
+
+**검증**: ① 저장소 페이지에서 About이 README "Reranking을 쓰지 않는 이유" 절과 일치함을 확인 — About의 "Cross-encoder reranking removed after it measurably hurt Korean retrieval" ↔ README/CHANGELOG #25 Top-1 66.7%→13.3%. GitHub 웹 설정이라 저장소에 흔적이 남지 않으므로 이 항목이 유일한 기록. ② 저장소 전체 grep — "무중단"은 `DEPLOYMENT.md:136,146` 두 곳뿐(README·README.en·백엔드/프론트 README·docs/에는 없음). `docker-compose.yml`의 `fastapi` 서비스가 단일 인스턴스이고 `image:` 태그 없이 `build:`만 있어 이전 이미지로의 롤백 구조도 없음을 확인. 다운타임 길이는 실측하지 않았으므로 "수 초~수십 초"로만 표기(⚠️ 측정값 아님). 문서 정정만이라 `APP_VERSION` 미변경(버전 태그 없음).
 
 ---
 
