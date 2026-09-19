@@ -886,6 +886,8 @@ cd law11_backend && python -m eval.eval_multiturn
 - 분리한 4개 섹션은 분리 전 README(`bd8bc3c`)의 원문과 문자열 단위로 동일함을 스크립트로 확인 (링크 경로 1건만 `ops.md`로 재지정)
 - 링크 검사: README·README.en·CHANGELOG·CONTRIBUTING·docs/* 의 상대 링크·앵커 전수 검사, 깨진 링크 0
 
+작업 순서상 #51(버전 단일 소스화)을 먼저 커밋했고, changelog 번호는 문서 개편(#50)이 앞섭니다. 최종 `APP_VERSION`은 1.9.7입니다.
+
 ---
 
 ### 51. 앱 버전 하드코딩 제거 — `settings.APP_VERSION` 단일 소스화 `v1.9.7`
