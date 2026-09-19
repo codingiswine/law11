@@ -936,6 +936,8 @@ cd law11_backend && python -m eval.eval_multiturn
 
 **검증**: `grep -c '^### ' CHANGELOG.md` = 60 (`^### [0-9]` 53, `^### P` 7). #25 본문 수치가 A/B/C 표(A_vector 66.7/83.3, B_en_ce 13.3/40.0)와 일치함을 대조. `README.md:237`의 "pytest 68"은 09-19 재검증 시점 기술이라 유지.
 
+**보완 (2026-09-20)**: 위 수정에서 빠진 지점 3곳 추가 갱신 — `README.md:249` "58건" → 60건, `README.en.md:46` "#1–#51" → #1–#53, `README.md:253` 대표 사례의 "교정하자 46.7% → 83.3%"(증상 ②와 같은 두 단계 합산 서술) → "46.7% → 40.0%로 오히려 하락". 건수 참조 지점은 README 3곳·README.en 4곳·CHANGELOG 헤더 1곳으로 확정.
+
 ---
 ## Pre-changelog 수정 이력
 

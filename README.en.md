@@ -43,7 +43,7 @@ The [changelog](CHANGELOG.md) documents 53 find-fix cycles in "symptom → root 
 
 ## Fixes that predate the changelog
 
-The numbered changelog (#1–#51) starts at `v1.0.1` (2026-07-16), when the
+The numbered changelog (#1–#53) starts at `v1.0.1` (2026-07-16), when the
 "symptom → root cause → measured verification" format was adopted. Earlier bug fixes
 exist only as commits; a later audit (`docs/defect_audit.md`) recovered them. They are
 listed separately so the existing numbering stays stable.
