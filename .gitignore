@@ -72,6 +72,8 @@ backups/
 law11_backend/eval/results/*.json
 # 단, 라우터 정확도는 케이스 단위 diff를 위해 추적 (2026-07-18)
 !law11_backend/eval/results/router_accuracy.json
+# README 핵심 수치의 재검증 근거로 인용한 실행 결과는 예외적으로 추적 (2026-09-19)
+!law11_backend/eval/results/baseline_20260919_0650_full.json
 
 # =========================================
 # 🛠️ INTERNAL DEV DOCS (Claude Code 워크플로우)

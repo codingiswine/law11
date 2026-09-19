@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Law11 FastAPI Backend",
     description="GPT-4o 기반 Adaptive Streaming 챗봇 백엔드",
-    version="0.8.2",
+    version=settings.APP_VERSION,
     lifespan=lifespan,
 )
 

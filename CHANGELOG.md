@@ -1,7 +1,7 @@
 # Law11 Changelog
 
 루트 [README.md](README.md)에서 옮겨온 발견·수정 이력입니다. 형식: **증상 → 근본 원인 → 실측 검증**.
-번호(#1~#49)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
+번호(#1~#51)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
 
 ## 목차
 
@@ -54,6 +54,7 @@
 - [47. 관리자 엔드포인트 무인증 노출 + 질문 길이 무제한 수정 v1.9.3](#47-관리자-엔드포인트-무인증-노출-질문-길이-무제한-수정-v193)
 - [48. 모델명 하드코딩 제거 — settings 단일 소스로 통합 v1.9.4](#48-모델명-하드코딩-제거-settings-단일-소스로-통합-v194)
 - [49. README 고정 섹션·.env.example을 코드와 재동기화 v1.9.5](#49-readme-고정-섹션envexample을-코드와-재동기화-v195)
+- [51. 앱 버전 하드코딩 제거 — settings.APP_VERSION 단일 소스화 v1.9.7](#51-앱-버전-하드코딩-제거--settingsapp_version-단일-소스화-v197)
 - [P1. 조문 본문의 항·호 번호 중복 + 인용 배지 순서/점수 불일치 2c8097e](#p1-조문-본문의-항호-번호-중복-인용-배지-순서점수-불일치-2c8097e)
 - [P2. 스트림 완료 콜백 경합 + confidence_score 불일치 764b646](#p2-스트림-완료-콜백-경합-confidence_score-불일치-764b646)
 - [P3. 웹 폴백 인용의 "0%" 관련도 배지 ffdcb2f](#p3-웹-폴백-인용의-0-관련도-배지-ffdcb2f)
@@ -859,6 +860,18 @@ cd law11_backend && python -m eval.eval_multiturn
 **수정**: 위 항목 전부를 `routes.py`·`main.py`·`law_scheduler.py`·`metrics_service.py`·`settings.py`·`docker-compose.yml`에서 다시 읽어 맞춤. `.env.example`은 `DB_NAME=law11`로 정정하고 죽은 변수 제거.
 
 **검증**: 라우트 목록(`grep @router/@app`)·`tool_map`·scheduler `add_job`·메트릭 정의·`os.getenv` 호출 전수와 README 표를 1:1 대조. 코드 변경 없음, pytest 68개 그대로.
+
+---
+
+### 51. 앱 버전 하드코딩 제거 — `settings.APP_VERSION` 단일 소스화 `v1.9.7`
+
+**문제**: README 수치 확정 작업 중 `GET /health`를 호출해 보니 `{"version": "0.8.2"}`가 돌아왔다. README 배지는 1.9.5. 프로젝트 초기부터 `app/main.py`의 `FastAPI(version="0.8.2")`가 한 번도 안 올라간 채, 버전은 README 배지에서만 관리돼 왔다.
+
+**근본 원인**: 버전이 두 곳(README 배지, `main.py`)에 독립 하드코딩돼 있고 둘을 잇는 검사가 없었다. #48(모델명)과 같은 구조의 문제. 저장소 전체 조사 결과 하드코딩 위치는 `app/main.py:23`(0.8.2), `README.md`·`README.en.md` 배지(1.9.5)뿐이었고, git tag에는 버전 태그가 없으며 `law11_frontend/package.json`은 Vite 스캐폴드 기본값 `0.0.0`(사용자 노출 없음, 이번 범위 밖).
+
+**수정**: `settings.APP_VERSION` 신설, `main.py`가 `version=settings.APP_VERSION`으로 읽음. README 배지는 정적 텍스트라 settings에서 읽을 수 없으므로, 대신 `tests/test_version.py`가 (1) `app.version == settings.APP_VERSION`, (2) `README.md`·`README.en.md` 배지 == `settings.APP_VERSION`을 검사해 드리프트를 CI에서 잡는다.
+
+**검증**: 컨테이너 재빌드 후 `curl localhost:8000/health` → `{"status":"ok","version":"1.9.7"}`. pytest 68 → 70개(신규 2) 통과.
 
 ---
 

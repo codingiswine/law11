@@ -166,7 +166,7 @@ python -m eval.fault_inject         # 의존성 장애 주입
 ```
 
 CI(`.github/workflows/ci.yml`)는 push/PR마다 백엔드 pytest 와 프론트 typecheck/build 를 돌립니다.
-현재 테스트 68개, 실측 결과는 [루트 README](../README.md#평가-파이프라인)에 있습니다.
+현재 테스트 70개, 실측 결과는 [루트 README](../README.md#평가-파이프라인)에 있습니다.
 
 ---
 

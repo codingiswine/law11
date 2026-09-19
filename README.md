@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.5-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.9.7-orange.svg)]()
 
 > **이 저장소가 보여주는 것**
 > 1. 측정하고 고친 기록 — changelog 56건, 전부 실측 검증 포함
@@ -69,17 +69,17 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 지표 | 수치 | 조건 |
 |---|---|---|
 | 검색 Top-3 recall | **96.7%** | 골든셋 30케이스 ¹ |
-| RAGAS Faithfulness / Answer Relevancy / Context Precision / Context Recall | **0.74 / 0.57 / 1.00 / 0.92** | 30케이스, gpt-4o-mini judge ² |
+| RAGAS Faithfulness / Answer Relevancy / Context Precision / Context Recall | **0.73~0.74 / 0.57 / 1.00 / 0.92~0.93** | 30케이스, gpt-4o-mini judge, 3회 관측 범위 ² |
 | 할루시네이션 | **명백한 날조 0/30** · GROUNDED 28/30 (93.3%) · Citation 누락 0건 | 골든셋 30케이스, DB 수록 9개 법령 범위 내 ³ |
 | 라우터 정확도 | **43/43 (100%)** | 키워드 fast-path + LLM 하이브리드, 판례 케이스 11개 포함 ⁴ |
 | 멀티턴 회귀 eval | 시나리오 5개 | 전부 mutation test(fix 되돌리기)로 회귀 감지력 검증 |
-| 자동화 테스트 / CI | pytest 68개 | GitHub Actions — 백엔드 pytest · 프론트 typecheck/build |
+| 자동화 테스트 / CI | pytest 70개 | GitHub Actions — 백엔드 pytest · 프론트 typecheck/build |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 | 설계 목표 10명의 2배 |
 | 장애 주입 테스트 | 결함 4건 발견·수정 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 ⁵ |
 | 문서화된 발견-수정 사이클 | changelog 49건 + 체계 도입 이전 7건 | 증상 → 근본 원인 → 실측 검증 형식, [CHANGELOG.md](CHANGELOG.md) |
 
 ¹ 복수 인정 조문 정책(#30)과 법령 용어 매핑(#33) 적용 후 값.
-² RAGAS 자체의 한국어 인코딩 버그를 근본 수정(#40)한 뒤의 값. answer_relevancy는 #39에서 지표 제외했다가 복구됨.
+² RAGAS 자체의 한국어 인코딩 버그를 근본 수정(#40)한 **이후** 관측값 전부: Faithfulness **0.69 / 0.74** (2026-09-05, 같은 날 2회) · **0.73** (2026-09-19, [결과 파일](law11_backend/eval/results/baseline_20260919_0650_full.json)). 같은 날 2회 실행 간 편차(+7.5%, 0.6918→0.7438)가 2주 간격 재측정 편차(−2.0%, 0.7438→0.7289)보다 크다 — LLM-judge 비결정성이 시스템 변화보다 큰 노이즈원이라는 뜻. 이 분산 때문에 회귀 임계는 Faithfulness만 15%, 나머지 5%로 둔다(`eval/harness.py:76,81`). 09-19 판정: F −2.0% / AR +0.1% / CP 0.0% / CR +1.0%, 전부 임계 이내. #40 **이전**(2026-07-19, 인코딩 버그가 살아 있던 상태)의 0.86 / 0.79 / 0.71(#29)은 측정 조건이 달라 위 분포에 합치지 않는다. answer_relevancy는 #39에서 지표 제외했다가 #40에서 복구됨.
 ³ 나머지 2건은 표현이 뭉개진 PARTIAL. 판정기 자체의 거짓 지적을 #46에서 수정하고, 조작 답변 4종 음성 대조군으로 탐지력 유지를 확인. **DB에 있는 9개 법령 범위 내 결과이며, 범위 밖 질문(웹 폴백 경로)까지 보증하지 않습니다.**
 ⁴ 판례 라우팅 케이스는 #38에서 추가.
 ⁵ 상세는 #31.
