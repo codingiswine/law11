@@ -8,7 +8,7 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.4-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.9.5-orange.svg)]()
 
 한국 산업안전보건 법령 9개 (1,629개 조문)를 대상으로 한 **도메인 특화 RAG 시스템**입니다.  
 PostgreSQL 정확 매칭 → Qdrant 의미 검색 → GPT-4o-mini 요약의 파이프라인으로 구성되며,  
@@ -70,14 +70,14 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 자동화 테스트 / CI | pytest 68개 + GitHub Actions (백엔드 pytest · 프론트 typecheck/build) |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 (설계 목표 10명의 2배) |
 | 장애 주입 테스트 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 — 결함 4건 발견·수정 (#31) |
-| 문서화된 발견-수정 사이클 | changelog 48건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
+| 문서화된 발견-수정 사이클 | changelog 49건 (증상 → 근본 원인 → 실측 검증 형식) + changelog 체계 도입 이전 7건 |
 
 **시스템 개요**:
 
 | 항목 | 수치 |
 |---|---|
 | 수록 법령 | 9개 (조문 1,629개) |
-| 수록 판례 | 대법원 판례, 법령당 상한 100건 (#38 — 현재 산업안전보건법 47건 시험 수집, 나머지 8개 법령은 `case_law_updater_async.py --all` 실행 후 확장) |
+| 수록 판례 | 대법원 판례 52건 (6개 법령, 법령당 상한 100건 — #38 도입, #39에서 `case_law_updater_async.py --all` 전체 수집) |
 | 임베딩 모델 | `text-embedding-3-large` (3,072차원) |
 | 평균 응답 시간 | < 3초 (스트리밍 첫 토큰 기준) |
 
@@ -104,6 +104,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 │  Tool 선택 (tool_map)                                        │
 │                                                             │
 │  law_rag_tool     — 국내 법령 RAG (기본 경로)                │
+│  case_law_rag_tool — 대법원 판례 검색 (#38)                  │
 │  news_tool        — 산업안전 관련 뉴스 검색                   │
 │  blog_tool        — 블로그 콘텐츠 검색                       │
 │  websearch_tool   — 외국 법령 / 일반 웹 검색                  │
@@ -160,7 +161,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 |---|---|---|---|
 | `fastapi` | custom build | 8000 | FastAPI 백엔드 |
 | `frontend` | Nginx Alpine | 3000 | React 정적 서빙 |
-| `postgres` | postgres:15 | 5432 | 조문 원문 + 대화 이력 + Citations |
+| `postgres` | postgres:15-alpine | 5432 | 조문 원문 + 대화 이력 + Citations |
 | `qdrant` | qdrant/qdrant | 6333 | 벡터 유사도 검색 |
 
 ### 주요 파일 구조
@@ -175,13 +176,16 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | `app/services/self_rag_subgraph.py` | LangGraph Self-RAG 서브그래프 (4노드 + 2 conditional edge) — `/api/ask-multi` 전용, 실험적 |
 | `app/services/langgraph_multi_agent.py` | LangGraph StateGraph 멀티 에이전트 (`/api/ask-multi` 전용, 실험적). 팩토리 함수(`_make_tool_node`)로 5개 tool 노드 생성, 그래프는 모듈 로드 시 1회 컴파일 후 싱글턴 재사용 |
 | `app/services/rag_service.py` | eval용 Qdrant 검색 래퍼 + `get_embedding_async` re-export |
-| `app/services/law_scheduler.py` | APScheduler 기반 주간 법령 자동 업데이트 |
+| `app/services/law_scheduler.py` | APScheduler — 주간 법령·판례 업데이트 + 일일 chat_history 백업 (job 3개) |
+| `app/services/backup_service.py` | `chat_history` JSON 덤프 (최근 30개 보관, #44) |
 | `app/services/qa_logger.py` | Retrieval 메타데이터 JSONL 로깅 |
 | `app/services/metrics_service.py` | Prometheus 메트릭 수집 |
 | `app/api/routes.py` | SSE 엔드포인트, 세션 관리, Citation 저장, 품질 점수 |
 | `app/config/settings.py` | 환경변수 로딩(python-dotenv) + 비동기 클라이언트 싱글턴 (OpenAI / Qdrant / SQLAlchemy) |
 | `app/tools/law_rag_tool.py` | 3단 검색 + Citation 이벤트 + 웹 fallback 인용 추출 |
 | `app/tools/law_updater_async.py` | 법제처 DRF API → PG + Qdrant 동기화 (비동기) |
+| `app/tools/case_law_rag_tool.py` | 대법원 판례 RAG — `case_law_chunks` + Qdrant `case_laws` 컬렉션 (#38) |
+| `app/tools/case_law_updater_async.py` | 법제처 DRF `target=prec` → 판례 수집·동기화 (#38) |
 
 ---
 
@@ -266,6 +270,11 @@ law11_backend/eval/
 ├── eval_retrieval.py        # 검색 성능 (top-k) 평가
 ├── eval_hallucination.py    # 할루시네이션 + Citation 검증
 ├── eval_multiturn.py        # 멀티턴 회귀 eval (수정한 멀티턴 버그 박제)
+├── load_test.py             # 동시 접속 부하 테스트 (SSE 완료까지 측정)
+├── fault_inject.py          # 의존성 장애 주입 테스트 (#31)
+├── run_qa_test.py           # QA 시나리오 실행 + failures 저장
+├── golden_dataset_case_law.json  # 판례 골든셋 초안 5케이스 (아직 eval 스크립트 미연결)
+├── golden_dataset_draft.json     # seed_golden_dataset 출력 초안
 ├── _rerank_experiment.py    # 리랭커 A/B/C 비교 실험 (#25의 근거, 일회성)
 ├── collect_failures.py      # 실패 케이스 수집·분류
 ├── improvement_loop.py      # 반복 개선 루프
@@ -1145,6 +1154,16 @@ cd law11_backend && python -m eval.eval_multiturn
 
 ---
 
+### 49. README 고정 섹션·`.env.example`을 코드와 재동기화 `v1.9.5`
+
+**문제**: changelog에는 기록됐지만 README의 고정 레퍼런스 섹션이 따라오지 않은 항목이 누적돼 있었다 — 판례 수치가 #39 이전 값(47건 시험 수집)에 멈춰 있어 `README.en.md`(52건)와 불일치, 아키텍처 tool 목록에 `case_law_rag_tool` 누락, 파일 구조·eval 트리에 #31/#38/#44 신규 파일 누락, 환경 변수 표에 `ADMIN_API_KEY`·`LLM_MODEL`·`EMBEDDING_MODEL`·`QDRANT_CASE_LAW_COLLECTION_NAME`·`CORS_ORIGINS` 누락, API 레퍼런스에 `/api/ask-multi`·`/api/admin/*` 누락, 스케줄러 설명이 job 3개 중 1개만 기술, Prometheus 메트릭 6개 중 4개만 기술. `.env.example`은 전신 프로젝트 잔재 `DB_NAME=llex`(코드·compose 기본값은 `law11`)와 코드 어디서도 읽지 않는 `ENABLE_LAW_FALLBACK`을 갖고 있었다.
+
+**수정**: 위 항목 전부를 `routes.py`·`main.py`·`law_scheduler.py`·`metrics_service.py`·`settings.py`·`docker-compose.yml`에서 다시 읽어 맞춤. `.env.example`은 `DB_NAME=law11`로 정정하고 죽은 변수 제거.
+
+**검증**: 라우트 목록(`grep @router/@app`)·`tool_map`·scheduler `add_job`·메트릭 정의·`os.getenv` 호출 전수와 README 표를 1:1 대조. 코드 변경 없음, pytest 68개 그대로.
+
+---
+
 ## Pre-changelog 수정 이력
 
 위 changelog(#1~#37)는 2026-07-16 `v1.0.1`부터 "증상 → 근본 원인 → 실측 검증" 형식으로
@@ -1240,13 +1259,24 @@ cd law11_backend && python -m eval.eval_multiturn
 
 ## 운영 모니터링
 
-### 법령 자동 업데이트 스케줄러
+### 자동 업데이트 · 백업 스케줄러
 
-`law_scheduler.py`가 FastAPI lifespan에 등록되어 **매주 월요일 새벽 3시(KST)** 법제처 DRF API에서 최신 법령을 자동으로 가져와 PostgreSQL과 Qdrant를 동기화합니다.
+`law_scheduler.py`가 FastAPI lifespan에 등록되어 다음 job 3개를 실행합니다 (KST).
+
+| job id | 주기 | 작업 |
+|---|---|---|
+| `weekly_law_update` | 매주 월 03:00 | 법제처 DRF API → PostgreSQL + Qdrant `laws` 동기화 |
+| `weekly_case_law_update` | 매주 월 04:00 | 대법원 판례 → `case_law_chunks` + Qdrant `case_laws` 동기화 |
+| `daily_chat_backup` | 매일 05:00 | `chat_history` JSON 백업 (`backups/`, 최근 30개 보관) |
 
 ```bash
 # 수동 즉시 업데이트
 docker compose exec fastapi python -m app.tools.law_updater_async --all
+docker compose exec fastapi python -m app.tools.case_law_updater_async --all
+
+# HTTP로 트리거 (X-Admin-Key 필요 — API 레퍼런스 참고)
+curl -X POST -H "X-Admin-Key: $ADMIN_API_KEY" http://localhost:8000/api/admin/update-laws
+curl -X POST -H "X-Admin-Key: $ADMIN_API_KEY" http://localhost:8000/api/admin/backup-chat-history
 ```
 
 ### QA 로그
@@ -1274,6 +1304,8 @@ docker compose exec fastapi python -m app.tools.law_updater_async --all
 | `law11_response_time_seconds` | 응답 시간 히스토그램 |
 | `law11_tokens_used_total` | 모델별 토큰 사용량 |
 | `law11_errors_total` | 에러 유형별 카운터 |
+| `law11_agent_usage_total` | agent(tool)별 사용 횟수 |
+| `law11_active_requests` | 처리 중인 요청 수 (Gauge) |
 
 ```bash
 curl http://localhost:8000/api/metrics          # Prometheus 원시 메트릭
@@ -1356,7 +1388,13 @@ docker compose exec fastapi python -m app.tools.law_updater_async --all
 | `OPENAI_API_KEY` | ✅ | OpenAI API 키 |
 | `DB_PASS` | ✅ | PostgreSQL 비밀번호 |
 | `LAW_OC_ID` | ✅ | 법제처 DRF API OC ID |
-| `QDRANT_COLLECTION_NAME` | - | Qdrant 컬렉션명 (기본: `laws`) |
+| `ADMIN_API_KEY` | - | `/api/admin/*` 인증 키 (`X-Admin-Key` 헤더). 미설정 시 관리자 엔드포인트는 503으로 비활성화 (#47) |
+| `LLM_MODEL` | - | 생성·라우팅·판정 모델 (기본: `gpt-4o-mini`, #48) |
+| `EMBEDDING_MODEL` | - | 임베딩 모델 (기본: `text-embedding-3-large`, #48) |
+| `QDRANT_COLLECTION_NAME` | - | 법령 Qdrant 컬렉션명 (기본: `laws`) |
+| `QDRANT_CASE_LAW_COLLECTION_NAME` | - | 판례 Qdrant 컬렉션명 (기본: `case_laws`, #38) |
+| `CORS_ORIGINS` | - | 허용 오리진 콤마 구분 (기본: localhost 목록, #36) |
+| `OPENAI_PROJECT_ID` | - | OpenAI 프로젝트 ID (선택) |
 | `TAVILY_API_KEY` | - | 웹 폴백 검색 (일반 웹) |
 | `NAVER_CLIENT_ID` | - | Naver 뉴스/블로그 검색 (news_tool/blog_tool 전용) |
 | `NAVER_CLIENT_SECRET` | - | Naver 뉴스/블로그 검색 (news_tool/blog_tool 전용) |
@@ -1464,6 +1502,25 @@ curl http://localhost:8000/api/history/stats
 ### `GET /api/dashboard` — 운영 모니터링 대시보드 (HTML)
 
 브라우저에서 <http://localhost:8000/api/dashboard> 접속. 자세한 내용은 [운영 모니터링](#운영-모니터링) 참고.
+
+### `POST /api/ask-multi` — LangGraph 멀티 에이전트 + Self-RAG (실험적, SSE)
+
+요청·응답 형식은 `/api/ask`와 동일하며, 답변이 `self_rag_subgraph.py` 검증을 거칩니다.
+
+```bash
+curl -X POST http://localhost:8000/api/ask-multi \
+  -H "Content-Type: application/json" \
+  -d '{"question": "안전관리자 선임 기준은?", "session_id": "uuid-here"}'
+```
+
+### `POST /api/admin/update-laws` · `POST /api/admin/backup-chat-history` — 관리자 (인증 필요)
+
+`X-Admin-Key` 헤더가 `ADMIN_API_KEY`와 일치해야 합니다. 키 미설정 시 503, 불일치 시 401 (#47).
+
+```bash
+curl -X POST -H "X-Admin-Key: $ADMIN_API_KEY" http://localhost:8000/api/admin/update-laws
+curl -X POST -H "X-Admin-Key: $ADMIN_API_KEY" http://localhost:8000/api/admin/backup-chat-history
+```
 
 ---
 
