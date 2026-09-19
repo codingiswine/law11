@@ -137,7 +137,7 @@ python -m eval.eval_multiturn
 
 - `eval/golden_dataset.json` — 30개 골든 케이스. 필드: `id`, `question_type`, `law_name`, `law_name_norm`, `article_number`, `article_number_norm`, `question`, `ground_truth`. 케이스 추가/삭제는 `eval/seed_golden_dataset.py`로 재생성하고, `ground_truth` 핵심 요약은 수동 편집한다.
 - `eval/logs/qa_YYYYMMDD.jsonl` — `qa_logger.log_request()`가 기록하는 운영 로그. `perf_report.py`의 입력 소스. 삭제 금지.
-- `eval/results/baseline_*.json` — `harness.py`의 출력. `--compare` 모드의 기준점. 커밋하지 않는다.
+- `eval/results/baseline_*.json` — `harness.py`의 출력. `--compare` 모드의 기준점. 커밋하지 않는다. 예외: README 핵심 수치의 근거로 인용한 실행 결과는 `.gitignore`에 파일명 단위로 예외 등록해 추적한다 (현재 `baseline_20260919_0650_full.json`).
 
 ### 스케줄러 / 비동기 규칙
 
