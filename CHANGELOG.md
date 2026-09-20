@@ -1,7 +1,7 @@
 # Law11 Changelog
 
 루트 [README.md](README.md)에서 옮겨온 발견·수정 이력입니다. 형식: **증상 → 근본 원인 → 실측 검증**.
-번호(#1~#53)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
+번호(#1~#54)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
 
 ## 목차
 
@@ -58,6 +58,7 @@
 - [51. 앱 버전 하드코딩 제거 — settings.APP_VERSION 단일 소스화 v1.9.7](#51-앱-버전-하드코딩-제거--settingsapp_version-단일-소스화-v197)
 - [52. 코드 밖 문서가 코드와 어긋나 있던 문제 — GitHub About 설명과 DEPLOYMENT.md 무중단 표현](#52-코드-밖-문서가-코드와-어긋나-있던-문제--github-about-설명과-deploymentmd-무중단-표현)
 - [53. README 건수 표기 미갱신 + #25 본문이 중간 하락 구간을 생략](#53-readme-건수-표기-미갱신--25-본문이-중간-하락-구간을-생략)
+- [54. 선언만 되고 import되지 않는 의존성 4개 + 프론트 devDep 1개 제거 v1.9.8](#54-선언만-되고-import되지-않는-의존성-4개--프론트-devdep-1개-제거-v198)
 - [P1. 조문 본문의 항·호 번호 중복 + 인용 배지 순서/점수 불일치 2c8097e](#p1-조문-본문의-항호-번호-중복--인용-배지-순서점수-불일치-2c8097e)
 - [P2. 스트림 완료 콜백 경합 + confidence_score 불일치 764b646](#p2-스트림-완료-콜백-경합--confidence_score-불일치-764b646)
 - [P3. 웹 폴백 인용의 "0%" 관련도 배지 ffdcb2f](#p3-웹-폴백-인용의-0-관련도-배지-ffdcb2f)
@@ -939,6 +940,18 @@ cd law11_backend && python -m eval.eval_multiturn
 **보완 (2026-09-20)**: 위 수정에서 빠진 지점 3곳 추가 갱신 — `README.md:249` "58건" → 60건, `README.en.md:46` "#1–#51" → #1–#53, `README.md:253` 대표 사례의 "교정하자 46.7% → 83.3%"(증상 ②와 같은 두 단계 합산 서술) → "46.7% → 40.0%로 오히려 하락". 건수 참조 지점은 README 3곳·README.en 4곳·CHANGELOG 헤더 1곳으로 확정.
 
 ---
+### 54. 선언만 되고 import되지 않는 의존성 4개 + 프론트 devDep 1개 제거 v1.9.8
+
+**증상**: `requirements.txt`에 `psycopg2-binary`·`python-multipart`·`pydantic-settings`가 선언돼 있으나 `app/`·`core/`·`eval/`·`tests/` 어디서도 import되지 않는다 (`grep -rlE "^\s*(from|import) (psycopg2|multipart|pydantic_settings)"` = 0건). `requests`는 `eval/run_qa_test.py`·`eval/improvement_loop.py` 두 곳에서만 쓰이는데, 같은 eval 폴더의 `eval_multiturn.py`는 이미 `httpx`(openai SDK의 필수 의존성)를 쓰고 있어 HTTP 클라이언트가 셋(`aiohttp`·`httpx`·`requests`)이었다. 프론트 `package.json`의 `playwright` devDep은 `package.json` 외 참조 0건.
+
+**근본 원인**: 초기 스캐폴딩 때 "있으면 좋을" 패키지를 미리 적어두고, 실제로 쓰지 않게 된 뒤 정리하지 않았다. FastAPI의 Form/UploadFile(→ `python-multipart`), `BaseSettings`(→ `pydantic-settings`), 동기 PG 드라이버(→ `psycopg2`)는 모두 도입되지 않았다.
+
+**수정**: `requirements.txt`에서 4줄 삭제. eval 스크립트 2개의 `requests.post(stream=True)` → `httpx.stream("POST", ...)`, `iter_lines(decode_unicode=True)` → `iter_lines()`(httpx는 기본 str), `requests.exceptions.RequestException` → `httpx.HTTPError`. `package.json`에서 `playwright` 제거. `APP_VERSION` 1.9.7 → 1.9.8.
+
+**검증**: venv에서 `python -c "import httpx"` 0.28.1 확인, `py_compile` 통과, `pytest` 70 passed. `/ponytail-audit` 전체 감사에서 나온 11건 중 문서·README 수치에 영향이 없는 4건만 적용 — `/api/ask-multi` 실험 경로·`metrics_service`·미참조 eval 스크립트 5개 등 나머지 7건은 README·이력서가 언급하는 항목이라 보류.
+
+---
+
 ## Pre-changelog 수정 이력
 
 위 changelog(#1~#37)는 2026-07-16 `v1.0.1`부터 "증상 → 근본 원인 → 실측 검증" 형식으로

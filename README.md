@@ -8,10 +8,10 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.9.7-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.9.8-orange.svg)]()
 
 > **이 저장소가 보여주는 것**
-> 1. 측정하고 고친 기록 — changelog 60건, 전부 실측 검증 포함
+> 1. 측정하고 고친 기록 — changelog 61건, 전부 실측 검증 포함
 > 2. 검증 체계를 직접 만든 것 — 골든셋 30문항, 회귀 하니스, 장애 주입 5종, mutation test
 > 3. 표준을 실측으로 기각한 것 — Cross-Encoder Reranking 제거 (Top-1 13.3% → 66.7%)
 
@@ -78,7 +78,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 자동화 테스트 / CI | pytest 70개 | GitHub Actions — 백엔드 pytest · 프론트 typecheck/build |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 | 설계 목표 10명의 2배 |
 | 장애 주입 테스트 | 결함 4건 발견·수정 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 ⁵ |
-| 문서화된 발견-수정 사이클 | changelog 53건 + 체계 도입 이전 7건 | 증상 → 근본 원인 → 실측 검증 형식, [CHANGELOG.md](CHANGELOG.md) |
+| 문서화된 발견-수정 사이클 | changelog 54건 + 체계 도입 이전 7건 | 증상 → 근본 원인 → 실측 검증 형식, [CHANGELOG.md](CHANGELOG.md) |
 
 ¹ 복수 인정 조문 정책(#30)과 법령 용어 매핑(#33) 적용 후 값.
 ² RAGAS 자체의 한국어 인코딩 버그를 근본 수정(#40)한 **이후** 관측값 전부: Faithfulness **0.69 / 0.74** (2026-09-05, 같은 날 2회) · **0.73** (2026-09-19, [결과 파일](law11_backend/eval/results/baseline_20260919_0650_full.json)). 전체 이력: [baseline_history.md](law11_backend/eval/results/baseline_history.md). 같은 날 2회 실행 간 편차(+7.5%, 0.6918→0.7438)가 2주 간격 재측정 편차(−2.0%, 0.7438→0.7289)보다 크다 — LLM-judge 비결정성이 시스템 변화보다 큰 노이즈원이라는 뜻. 이 분산 때문에 회귀 임계는 Faithfulness만 15%, 나머지 5%로 둔다(`eval/harness.py:76,81`). 09-19 판정: F −2.0% / AR +0.1% / CP 0.0% / CR +1.0%, 전부 임계 이내. #40 **이전**(2026-07-19, 인코딩 버그가 살아 있던 상태)의 0.86 / 0.79 / 0.71(#29)은 측정 조건이 달라 위 분포에 합치지 않는다. answer_relevancy는 #39에서 지표 제외했다가 #40에서 복구됨.
@@ -246,7 +246,7 @@ docker compose exec fastapi python -m eval.eval_retrieval               # 검색
 
 ## 발견·수정 이력
 
-증상 → 근본 원인 → 실측 검증 형식으로 60건을 기록했습니다.
+증상 → 근본 원인 → 실측 검증 형식으로 61건을 기록했습니다.
 전체 목록: [CHANGELOG.md](CHANGELOG.md)
 
 대표 사례:

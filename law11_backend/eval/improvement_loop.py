@@ -23,7 +23,7 @@ import sys
 import argparse
 import json
 import time
-import requests
+import httpx
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -48,14 +48,14 @@ def call_api(query: str, timeout: int = 60) -> Dict[str, Any]:
     t0        = time.time()
 
     try:
-        with requests.post(
+        with httpx.stream(
+            "POST",
             API_URL,
             json={"question": query},
-            stream=True,
             timeout=timeout,
         ) as resp:
             resp.raise_for_status()
-            for raw_line in resp.iter_lines(decode_unicode=True):
+            for raw_line in resp.iter_lines():
                 if not raw_line:
                     continue
                 line = raw_line.strip()
@@ -85,7 +85,7 @@ def call_api(query: str, timeout: int = 60) -> Dict[str, Any]:
                 except (json.JSONDecodeError, TypeError):
                     pass
 
-    except requests.exceptions.RequestException as e:
+    except httpx.HTTPError as e:
         error = str(e)
 
     elapsed = time.time() - t0

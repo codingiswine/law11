@@ -13,7 +13,7 @@ SSE 스트림을 직접 파싱해 text 청크를 수집한다.
 import json
 import time
 import sys
-import requests
+import httpx
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -197,14 +197,14 @@ def call_api(query: str, timeout: int = 60) -> dict:
     source = "unknown"
 
     try:
-        with requests.post(
+        with httpx.stream(
+            "POST",
             API_URL,
             json={"user_id": USER_ID, "question": query},
-            stream=True,
             timeout=timeout,
         ) as resp:
             resp.raise_for_status()
-            for raw_line in resp.iter_lines(decode_unicode=True):
+            for raw_line in resp.iter_lines():
                 if not raw_line:
                     continue
                 line = raw_line.strip()
@@ -229,7 +229,7 @@ def call_api(query: str, timeout: int = 60) -> dict:
                 except (json.JSONDecodeError, TypeError):
                     continue
 
-    except requests.exceptions.RequestException as e:
+    except httpx.HTTPError as e:
         return {"text": f"[API ERROR] {e}", "source": "error"}
 
     full_text = "".join(text_parts)
