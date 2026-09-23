@@ -1,7 +1,7 @@
 # Law11 Changelog
 
 루트 [README.md](README.md)에서 옮겨온 발견·수정 이력입니다. 형식: **증상 → 근본 원인 → 실측 검증**.
-번호(#1~#54)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
+번호(#1~#55)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
 
 ## 목차
 
@@ -59,6 +59,7 @@
 - [52. 코드 밖 문서가 코드와 어긋나 있던 문제 — GitHub About 설명과 DEPLOYMENT.md 무중단 표현](#52-코드-밖-문서가-코드와-어긋나-있던-문제--github-about-설명과-deploymentmd-무중단-표현)
 - [53. README 건수 표기 미갱신 + #25 본문이 중간 하락 구간을 생략](#53-readme-건수-표기-미갱신--25-본문이-중간-하락-구간을-생략)
 - [54. 선언만 되고 import되지 않는 의존성 4개 + 프론트 devDep 1개 제거 v1.9.8](#54-선언만-되고-import되지-않는-의존성-4개--프론트-devdep-1개-제거-v198)
+- [55. 프론트 Tailwind v3 지시어가 v4에서 무시돼 유틸리티 0개 생성 + 미참조 파일 2개 제거 v1.9.9](#55-프론트-tailwind-v3-지시어가-v4에서-무시돼-유틸리티-0개-생성--미참조-파일-2개-제거-v199)
 - [P1. 조문 본문의 항·호 번호 중복 + 인용 배지 순서/점수 불일치 2c8097e](#p1-조문-본문의-항호-번호-중복--인용-배지-순서점수-불일치-2c8097e)
 - [P2. 스트림 완료 콜백 경합 + confidence_score 불일치 764b646](#p2-스트림-완료-콜백-경합--confidence_score-불일치-764b646)
 - [P3. 웹 폴백 인용의 "0%" 관련도 배지 ffdcb2f](#p3-웹-폴백-인용의-0-관련도-배지-ffdcb2f)
@@ -949,6 +950,16 @@ cd law11_backend && python -m eval.eval_multiturn
 **수정**: `requirements.txt`에서 4줄 삭제. eval 스크립트 2개의 `requests.post(stream=True)` → `httpx.stream("POST", ...)`, `iter_lines(decode_unicode=True)` → `iter_lines()`(httpx는 기본 str), `requests.exceptions.RequestException` → `httpx.HTTPError`. `package.json`에서 `playwright` 제거. `APP_VERSION` 1.9.7 → 1.9.8.
 
 **검증**: venv에서 `python -c "import httpx"` 0.28.1 확인, `py_compile` 통과, `pytest` 70 passed. `/ponytail-audit` 전체 감사에서 나온 11건 중 문서·README 수치에 영향이 없는 4건만 적용 — `/api/ask-multi` 실험 경로·`metrics_service`·미참조 eval 스크립트 5개 등 나머지 7건은 README·이력서가 언급하는 항목이라 보류.
+
+### 55. 프론트 Tailwind v3 지시어가 v4에서 무시돼 유틸리티 0개 생성 + 미참조 파일 2개 제거 v1.9.9
+
+**증상**: `npm run build` 산출 CSS가 3,519 bytes. `.prose` 규칙 0개, `.bg-gray-100` 0개 — 컴포넌트의 `className` 32곳이 전부 무효였다. 앱이 멀쩡해 보인 건 스타일 53곳이 인라인 `style={{}}`이라서였고, 마크다운 답변의 `prose prose-sm`만 밋밋하게 나가고 있었다.
+
+**근본 원인**: `src/index.css`가 v3 문법(`@tailwind base/components/utilities`)인데 설치는 `tailwindcss ^4.1.14`. v4는 이 지시어를 에러 없이 무시하고 `@layer properties` 변수 선언만 출력한다. 빌드가 성공하니 아무 신호가 없었다.
+
+**수정**: 세 줄을 `@import "tailwindcss";` + `@plugin "@tailwindcss/typography";`로 교체. 함께 미참조 파일 2개 제거 — `0719_law11_demo.gif`(97MB, README는 `assets/law11_demo.webp` 사용)와 `start.sh`(Docker fastapi와 로컬 uvicorn을 같은 :8000에 띄우고 `cd` 경로도 어긋난 stale 스크립트, 참조 0건).
+
+**검증**: 재빌드 CSS 3,519 → 32,052 bytes, `.prose` 규칙 0 → 150, `bg-gray-100` 생성 확인. `tsc -b && vite build` 통과, `pytest` 70 passed. gif는 HEAD에서만 제거 — 히스토리 정리(`git filter-repo`)는 공개 저장소 force push라 별도 판단. `/ponytail-audit` 재감사 항목 중 실사용자 영향이 있는 1건(Tailwind)과 첫인상에 걸리는 2건만 적용.
 
 ---
 

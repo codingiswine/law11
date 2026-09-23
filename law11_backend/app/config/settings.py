@@ -102,7 +102,7 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
 # ─────────────────────────────
 # /health 가 반환하던 FastAPI(version=...)가 0.8.2에 멈춰 README 배지(1.9.x)와
 # 따로 놀았다. 여기서만 올리고, README 배지와의 일치는 tests/test_version.py 가 지킨다.
-APP_VERSION = "1.9.8"
+APP_VERSION = "1.9.9"
 
 # ─────────────────────────────
 # 🔐 관리자 엔드포인트 인증
