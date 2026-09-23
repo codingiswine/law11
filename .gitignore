@@ -88,3 +88,6 @@ docs/.DS_Store
 
 # 면접 준비 문서 (공개 저장소에 올리지 않음)
 docs/interview_*.md
+
+# understand-anything 지식 그래프 (로컬 분석 산출물)
+.ua/
