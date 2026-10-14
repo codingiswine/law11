@@ -190,8 +190,10 @@ async def ask_law11(request: QueryRequest):
     logger.info(f"🚀 [요청 수신] {request.question}")
 
     try:
-        # ① ToolPlan 생성
+        # ① ToolPlan 생성 (라우팅 구간 계측)
+        _t_route = time.perf_counter()
         plan = await _detect_tool(user_id, request.question, session_id)
+        routing_sec = round(time.perf_counter() - _t_route, 3)
         full_answer_parts: List[str] = []
 
         # ✅ 내부 event_stream 정의
@@ -200,22 +202,25 @@ async def ask_law11(request: QueryRequest):
             pending_citations: List[dict] = []
             counter = 0
 
+            # 단계별 타이밍 — status 청크가 이미 단계 경계라, 도착 시각만 찍으면
+            # 모든 tool에 동일하게 적용된다 (tool 코드는 수정하지 않음)
+            t0 = time.perf_counter()
+            stages: List[dict] = []
+            meta_payload: Optional[dict] = None
+            first_token_sec: Optional[float] = None
+
             async for chunk in run_tool(plan):
                 # meta 청크는 로깅 전용 — SSE 클라이언트에 전달하지 않음
                 if chunk.type == "meta":
-                    p = chunk.payload
-                    qa_logger.log_request(
-                        query=request.question,
-                        query_type=p.get("query_type", ""),
-                        selected_source=p.get("selected_source", ""),
-                        selected_articles=p.get("selected_articles", []),
-                        fallback_used=p.get("fallback_used", False),
-                        confidence_score=p.get("confidence_score"),
-                        tool=p.get("tool", plan.tool),
-                    )
-                    if p.get("citations"):
-                        pending_citations = p["citations"]
+                    meta_payload = chunk.payload
+                    if chunk.payload.get("citations"):
+                        pending_citations = chunk.payload["citations"]
                     continue
+
+                if chunk.type == "status":
+                    stages.append({"at": round(time.perf_counter() - t0, 3), "label": chunk.payload})
+                elif chunk.type == "text" and first_token_sec is None:
+                    first_token_sec = round(time.perf_counter() - t0, 3)
 
                 # ✅ 항상 JSON 포맷으로 전송
                 yield f"data: {json.dumps({'event': chunk.type, 'payload': chunk.payload})}\n\n"
@@ -226,6 +231,27 @@ async def ask_law11(request: QueryRequest):
                     # 🔹 CPU 부하 완화
                     if counter % 20 == 0:
                         await asyncio.sleep(0)
+
+            # 스트림이 끝나야 생성 시간을 알 수 있어 meta 수신 시점이 아닌 여기서 1회 기록한다
+            if meta_payload is not None:
+                tool_sec = round(time.perf_counter() - t0, 3)
+                qa_logger.log_request(
+                    query=request.question,
+                    query_type=meta_payload.get("query_type", ""),
+                    selected_source=meta_payload.get("selected_source", ""),
+                    selected_articles=meta_payload.get("selected_articles", []),
+                    fallback_used=meta_payload.get("fallback_used", False),
+                    confidence_score=meta_payload.get("confidence_score"),
+                    tool=meta_payload.get("tool", plan.tool),
+                    timings={
+                        "routing": routing_sec,          # 질문 → ToolPlan
+                        "first_token": first_token_sec,  # tool 시작 → 첫 토큰 (검색+프롬프트 구성)
+                        "generation": round(tool_sec - first_token_sec, 3) if first_token_sec is not None else None,
+                        "tool_total": tool_sec,
+                        "total": round(routing_sec + tool_sec, 3),
+                        "stages": stages,                # status 청크 타임라인
+                    },
+                )
 
             # ✅ DB 저장
             final_tool_name = plan.tool.split("_")[0]

@@ -12,7 +12,7 @@ routes.py가 meta ToolChunk를 받으면 여기에 위임한다.
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 LOG_DIR = Path(__file__).parent.parent.parent / "eval" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -26,6 +26,7 @@ def log_request(
     fallback_used: bool,
     confidence_score: Optional[float] = None,
     tool: str = "",
+    timings: Optional[Dict[str, Any]] = None,  # 단계별 소요 시간(초) — routes.py가 측정
 ) -> None:
     entry = {
         "ts": datetime.now().isoformat(timespec="seconds"),
@@ -36,6 +37,7 @@ def log_request(
         "selected_articles": selected_articles,
         "fallback_used": fallback_used,
         "confidence_score": round(confidence_score, 4) if confidence_score else None,
+        "timings": timings,
     }
     today = datetime.now().strftime("%Y%m%d")
     path = LOG_DIR / f"qa_{today}.jsonl"

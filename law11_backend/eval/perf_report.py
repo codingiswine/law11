@@ -123,6 +123,32 @@ def analyze_response_times() -> Dict[str, Any]:
                     "실시간 측정은 Prometheus metrics /api/metrics 를 확인하세요."}
 
 
+# 단계별 타이밍 — routes.py가 qa 로그의 "timings"에 기록한다 (#56)
+_STAGE_KEYS = ["routing", "first_token", "generation", "tool_total", "total"]
+
+
+def analyze_timings(entries: List[Dict]) -> Dict[str, Any]:
+    """전체 응답시간을 라우팅/검색/생성 구간으로 쪼개 분포를 낸다.
+
+    "11초가 걸렸다"가 아니라 "11초 중 생성이 N초"를 말하기 위한 집계다.
+    """
+    samples = [e["timings"] for e in entries if isinstance(e.get("timings"), dict)]
+    if not samples:
+        return {}
+
+    out: Dict[str, Any] = {"count": len(samples)}
+    for key in _STAGE_KEYS:
+        vals = [s[key] for s in samples if isinstance(s.get(key), (int, float))]
+        if vals:
+            out[key] = {
+                "mean": round(statistics.mean(vals), 3),
+                "p50": percentile(vals, 50),
+                "p95": percentile(vals, 95),
+                "max": max(vals),
+            }
+    return out
+
+
 def print_report(report: Dict[str, Any]):
     log = report.get("log_analysis", {})
     if not log:
@@ -148,6 +174,24 @@ def print_report(report: Dict[str, Any]):
               f"p25={cs.get('p25'):.3f}  p50={cs.get('p50'):.3f}  "
               f"p75={cs.get('p75'):.3f}  p95={cs.get('p95'):.3f}")
 
+    tm = report.get("timings", {})
+    if tm:
+        labels = {
+            "routing":     "라우팅 (질문→ToolPlan)",
+            "first_token": "검색+프롬프트 (tool시작→첫토큰)",
+            "generation":  "생성 (첫토큰→완료)",
+            "tool_total":  "tool 전체",
+            "total":       "전체",
+        }
+        print(f"\n  ── 단계별 소요 시간 ({tm.get('count')}건, 초) ──")
+        print(f"    {'구간':<30} {'p50':>7} {'p95':>7} {'max':>7}")
+        for key in _STAGE_KEYS:
+            s = tm.get(key)
+            if s:
+                print(f"    {labels[key]:<30} {s['p50']:>7.2f} {s['p95']:>7.2f} {s['max']:>7.2f}")
+    else:
+        print("\n  ── 단계별 소요 시간 ── (timings 없는 과거 로그만 존재)")
+
 
 def main():
     print(f"\n{'='*55}")
@@ -157,12 +201,14 @@ def main():
     entries = load_qa_logs()
     log_analysis = analyze_logs(entries)
     resp_time    = analyze_response_times()
+    timings      = analyze_timings(entries)
 
     report = {
         "generated_at":  datetime.now().isoformat(timespec="seconds"),
         "log_files":     len(list(LOG_DIR.glob("qa_*.jsonl"))) if LOG_DIR.exists() else 0,
         "log_analysis":  log_analysis,
         "response_time": resp_time,
+        "timings":       timings,
         "note": "응답 시간 p95는 Prometheus /api/metrics 에서 law11_response_time_seconds 확인",
     }
 
