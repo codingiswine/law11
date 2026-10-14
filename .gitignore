@@ -79,7 +79,10 @@ law11_backend/eval/results/*.json
 # 🛠️ INTERNAL DEV DOCS (Claude Code 워크플로우)
 # =========================================
 docs/superpowers/
-.claude/
+# .claude/ 중 훅 설정은 공개 (커밋 전 pytest 자동 실행)
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
 
 
 # 로컬 잔여물
