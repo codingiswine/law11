@@ -11,7 +11,7 @@
 [![Version](https://img.shields.io/badge/Version-1.10.0-orange.svg)]()
 
 > **이 저장소가 보여주는 것**
-> 1. 측정하고 고친 기록 — changelog 62건, 전부 실측 검증 포함
+> 1. 측정하고 고친 기록 — changelog 63건, 전부 실측 검증 포함
 > 2. 검증 체계를 직접 만든 것 — 골든셋 30문항, 회귀 하니스, 장애 주입 5종, mutation test
 > 3. 표준을 실측으로 기각한 것 — Cross-Encoder Reranking 제거 (Top-1 13.3% → 66.7%)
 
@@ -249,7 +249,7 @@ docker compose exec fastapi python -m eval.eval_retrieval               # 검색
 
 ## 발견·수정 이력
 
-증상 → 근본 원인 → 실측 검증 형식으로 62건을 기록했습니다.
+증상 → 근본 원인 → 실측 검증 형식으로 63건을 기록했습니다.
 전체 목록: [CHANGELOG.md](CHANGELOG.md)
 
 대표 사례:
