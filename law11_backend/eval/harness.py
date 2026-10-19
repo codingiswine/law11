@@ -73,12 +73,27 @@ RESULTS_DIR     = EVAL_DIR / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
 
 SMOKE_SIZE      = 5
-REGRESSION_THRESHOLD = 0.05   # 5% 이상 하락 → REGRESSION (기본)
-# ⚠️ faithfulness는 동일 설정 연속 실행에서도 ±10% 흔들린다 (실측 2026-07-19:
-# 같은 시스템 3회 실행이 0.86 → 0.79 → 0.71). LLM-judge의 문장 추출/판정이
-# 비결정적이기 때문 — 5% 게이트를 그대로 쓰면 노이즈로 CI가 계속 깨진다.
-# 실측 분산보다 넓은 15%만 진짜 회귀로 판정한다.
-METRIC_THRESHOLDS = {"faithfulness": 0.15}
+REGRESSION_THRESHOLD = 0.05   # 목록에 없는 지표의 기본값
+
+# 지표별 회귀 판정선 — 2026-10-19 실측 노이즈 기반으로 재설정했다 (#59).
+#
+# 같은 설정을 3회씩 돌려 상대 범위(최대-최소 ÷ 평균)를 쟀고, 판정선은 그 2배로 둔다.
+#   지표                v1 조건   v3 조건   최대     판정선
+#   faithfulness         2.50%    8.45%    8.45%    0.15
+#   answer_relevancy     0.80%    0.35%    0.80%    0.02
+#   context_precision    1.48%    0.34%    1.48%    0.03
+#   context_recall       0.00%    0.00%    0.00%    0.02  (0은 과민해 하한을 둔다)
+#
+# ⚠️ faithfulness만 판정선이 큰 이유: 노이즈가 조건에 따라 3.4배 달라진다.
+#    답변이 짧아지면 판정 대상 주장 수가 줄어 하나의 판정이 점수를 크게 흔든다
+#    (#58에서 답변 765자 → 386자로 줄자 노이즈가 2.50% → 8.45%로 커졌다).
+#    따라서 faithfulness는 단일 실행 비교로 판단하지 말고 --repeat 으로 분산까지 볼 것.
+METRIC_THRESHOLDS = {
+    "faithfulness":      0.15,
+    "answer_relevancy":  0.02,
+    "context_precision": 0.03,
+    "context_recall":    0.02,
+}
 
 # ────────────────────────────────────────────
 # RAGAS 설정 — 판정기는 settings.JUDGE_MODEL(기본 gpt-4o-mini)로 고정한다.
@@ -380,8 +395,49 @@ def print_comparison(
 # ────────────────────────────────────────────
 # 메인
 # ────────────────────────────────────────────
-async def main(smoke: bool = False, compare_only: bool = False):
+def print_repeat_summary(all_metrics: List[Dict[str, float]]) -> None:
+    """같은 설정 N회 결과의 평균과 범위를 낸다.
+
+    단일 실행 비교로는 변경의 효과와 노이즈를 구분할 수 없다. 특히 faithfulness는
+    조건에 따라 노이즈가 3.4배까지 달라져(#58), 범위를 함께 보지 않으면 판정이 틀린다.
+    """
+    n = len(all_metrics)
+    print(f"\n{'─'*61}")
+    print(f"  반복 측정 요약 — 같은 설정 {n}회")
+    print(f"  생성 {settings.LLM_MODEL} / 판정 {settings.JUDGE_MODEL}")
+    print(f"{'─'*61}")
+    print(f"  {'Metric':<20}{'평균':>9}{'최소':>9}{'최대':>9}{'범위':>9}{'상대':>8}")
+    print(f"  {'─'*20}{'─'*9}{'─'*9}{'─'*9}{'─'*9}{'─'*8}")
+    for k in METRICS_ORDER:
+        vals = [m[k] for m in all_metrics if k in m]
+        if not vals:
+            continue
+        mean = sum(vals) / len(vals)
+        rng  = max(vals) - min(vals)
+        rel  = (rng / mean * 100) if mean else 0.0
+        gate = METRIC_THRESHOLDS.get(k, REGRESSION_THRESHOLD) * 100
+        warn = "  ⚠️ 판정선 초과" if rel > gate else ""
+        print(f"  {k:<20}{mean:>9.4f}{min(vals):>9.4f}{max(vals):>9.4f}{rng:>9.4f}{rel:>7.2f}%{warn}")
+    print(f"{'─'*61}")
+    print("  다음 변경의 유의성은 위 '범위'의 2배를 넘는지로 판단한다.\n")
+
+
+async def main(smoke: bool = False, compare_only: bool = False, repeat: int = 1):
     run_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # ── repeat 모드: 같은 설정을 N회 돌려 분산을 낸다 ──
+    if repeat > 1:
+        print(f"\n  [repeat 모드] 같은 설정으로 {repeat}회 측정합니다.\n")
+        collected: List[Dict[str, float]] = []
+        for i in range(repeat):
+            print(f"\n{'='*61}\n  {i+1}/{repeat} 회차\n{'='*61}")
+            await main(smoke=smoke, compare_only=False, repeat=1)
+            latest = load_previous_results(exclude_path=None)
+            if latest:
+                collected.append(latest["metrics"])
+        if collected:
+            print_repeat_summary(collected)
+        return
 
     # ── compare-only 모드 ──────────────────────
     if compare_only:
@@ -454,5 +510,12 @@ if __name__ == "__main__":
         action="store_true",
         help="새 실행 없이 results/ 의 직전 두 파일만 비교",
     )
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        metavar="N",
+        help="같은 설정으로 N회 측정하고 평균·범위를 출력 (노이즈 기준선 측정용)",
+    )
     args = parser.parse_args()
-    asyncio.run(main(smoke=args.smoke, compare_only=args.compare))
+    asyncio.run(main(smoke=args.smoke, compare_only=args.compare, repeat=args.repeat))
