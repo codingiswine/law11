@@ -8,10 +8,10 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.12.1-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.12.2-orange.svg)]()
 
 > **이 저장소가 보여주는 것**
-> 1. 측정하고 고친 기록 — changelog 66건, 전부 실측 검증 포함
+> 1. 측정하고 고친 기록 — changelog 67건, 전부 실측 검증 포함
 > 2. 검증 체계를 직접 만든 것 — 골든셋 30문항, 회귀 하니스, 장애 주입 5종, mutation test
 > 3. 표준을 실측으로 기각한 것 — Cross-Encoder Reranking 제거 (Top-1 13.3% → 66.7%)
 
@@ -75,11 +75,11 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 할루시네이션 | **명백한 날조 0/30** · GROUNDED 28/30 (93.3%) · Citation 누락 0건 | 골든셋 30케이스, DB 수록 9개 법령 범위 내 ³ |
 | 라우터 정확도 | **43/43 (100%)** | 키워드 fast-path + LLM 하이브리드, 판례 케이스 11개 포함 ⁴ |
 | 멀티턴 회귀 eval | 시나리오 5개 | 전부 mutation test(fix 되돌리기)로 회귀 감지력 검증 |
-| 자동화 테스트 / CI | pytest 72개 | GitHub Actions — 백엔드 pytest · 프론트 typecheck/build |
+| 자동화 테스트 / CI | pytest 73개 | GitHub Actions — 백엔드 pytest · 프론트 typecheck/build |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 | 설계 목표 10명의 2배 |
 | 응답 시간 구간 분해 | 전체 p95 18.57초 중 **병목은 웹 폴백 경로(p95 20.02초)** | 20명×3라운드 60건, 경로별 분해 ⁶ |
 | 장애 주입 테스트 | 결함 4건 발견·수정 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 ⁵ |
-| 문서화된 발견-수정 사이클 | changelog 59건 + 체계 도입 이전 7건 | 증상 → 근본 원인 → 실측 검증 형식, [CHANGELOG.md](CHANGELOG.md) |
+| 문서화된 발견-수정 사이클 | changelog 60건 + 체계 도입 이전 7건 | 증상 → 근본 원인 → 실측 검증 형식, [CHANGELOG.md](CHANGELOG.md) |
 
 ¹ 복수 인정 조문 정책(#30)과 법령 용어 매핑(#33) 적용 후 값.
 ² 2026-10-19 실측(#57~#59). 그 전까지 평가 하니스는 운영과 **다른 프롬프트·온도**로 답변을 만들어 채점하고 있었다 — RAGAS 수치가 실제 서비스 품질을 대변하지 못했다는 뜻이다. #57에서 운영 프롬프트·온도로 통일하고 판정기를 생성기와 분리한 뒤, 같은 조건 3회씩 돌려 노이즈부터 측정했다. 괄호 안은 상대 범위(최대−최소 ÷ 평균).
@@ -247,7 +247,7 @@ RAGAS 기반 오프라인 평가 + 라우터·검색·할루시네이션·멀티
 | 멀티턴 회귀 | 5/5 |
 | 부하 (2026-07-15) | 20명 동시 무실패, Total p50 11.2s |
 
-2026-09-19 재검증: pytest 68 · 라우터 43/43 · Top-3 recall 96.7% · 할루시네이션 0/30 · 멀티턴 5/5 · RAGAS 회귀 없음 — 전 항목 일치. (이후 #51에서 버전 동기화 2개, #56에서 구간 계측 2개가 추가되어 현재 72개)
+2026-09-19 재검증: pytest 68 · 라우터 43/43 · Top-3 recall 96.7% · 할루시네이션 0/30 · 멀티턴 5/5 · RAGAS 회귀 없음 — 전 항목 일치. (이후 #51에서 버전 동기화 2개, #56에서 구간 계측 2개, #60에서 changelog 건수 대조 1개가 추가되어 현재 73개)
 
 ```bash
 docker compose exec fastapi pip install -r eval/requirements-eval.txt   # ragas는 컨테이너 안에만
@@ -259,7 +259,7 @@ docker compose exec fastapi python -m eval.eval_retrieval               # 검색
 
 ## 발견·수정 이력
 
-증상 → 근본 원인 → 실측 검증 형식으로 66건을 기록했습니다.
+증상 → 근본 원인 → 실측 검증 형식으로 67건을 기록했습니다.
 전체 목록: [CHANGELOG.md](CHANGELOG.md)
 
 대표 사례:
