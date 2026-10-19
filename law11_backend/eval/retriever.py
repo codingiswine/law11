@@ -33,15 +33,18 @@ from app.tools.law_rag_tool import (
     detect_law_name,
     get_priority_law,
     normalize_law_name,
+    SYSTEM_PROMPT,          # 운영과 같은 프롬프트로 평가한다 (#57)
 )
 
 openai_client = settings.openai_client
 
-SYSTEM_PROMPT = (
-    "너는 대한민국 산업안전보건 법령 전문 어시스턴트야. "
-    "아래 법령 조문을 기반으로 질문에 정확하고 간결하게 답변해. "
-    "제공된 조문 내용에만 근거해서 답변하고, 조문에 없는 내용은 추측하지 마."
-)
+# 2026-10-19 이전에는 여기에 29자짜리 자체 프롬프트가 따로 있었다. 운영
+# (law_rag_tool.SYSTEM_PROMPT, 1,281자 — 할루시네이션 방지 + 법 적용 3단계)과
+# 다른 프롬프트로 채점하고 있었기 때문에, RAGAS 수치가 실제 답변 품질을
+# 대변하지 못했다. 단일 소스로 통일한다 (#57).
+
+# 운영 생성 온도와 동일하게 맞춘다 (law_rag_tool.py의 chat.completions 호출들)
+GEN_TEMPERATURE = 0.2
 
 
 async def retrieve_and_generate(
@@ -141,7 +144,7 @@ async def _generate(question: str, contexts: List[str], retrieved_articles: List
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_message},
         ],
-        temperature=0.1,
+        temperature=GEN_TEMPERATURE,
         max_tokens=800,
         stream=False,
     )

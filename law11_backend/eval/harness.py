@@ -81,10 +81,12 @@ REGRESSION_THRESHOLD = 0.05   # 5% 이상 하락 → REGRESSION (기본)
 METRIC_THRESHOLDS = {"faithfulness": 0.15}
 
 # ────────────────────────────────────────────
-# RAGAS 설정 (gpt-4o-mini, 비용 절감)
+# RAGAS 설정 — 판정기는 settings.JUDGE_MODEL(기본 gpt-4o-mini)로 고정한다.
+# 생성 모델(LLM_MODEL)과 같은 값을 쓰면 모델을 바꿀 때 채점자도 같이 바뀌어
+# 점수 변화의 원인을 생성/채점으로 분리할 수 없다 (#57).
 # ────────────────────────────────────────────
 _ragas_llm = LangchainLLMWrapper(
-    ChatOpenAI(model=settings.LLM_MODEL, api_key=settings.OPENAI_API_KEY)
+    ChatOpenAI(model=settings.JUDGE_MODEL, api_key=settings.OPENAI_API_KEY)
 )
 _ragas_emb = LangchainEmbeddingsWrapper(
     OpenAIEmbeddings(model=settings.EMBEDDING_MODEL, api_key=settings.OPENAI_API_KEY)
@@ -218,6 +220,11 @@ def save_result(pipeline_results: List[Dict], metrics: Dict, tag: str) -> Path:
         "run_date":         datetime.now().isoformat(),
         "harness_version":  "1.0",
         "tag":              tag,
+        # 어느 모델로 생성하고 어느 모델로 채점했는지 남긴다. 둘 중 하나만 바뀌어도
+        # 점수가 움직이므로, 기록이 없으면 과거 결과와 비교할 수 없다 (#57).
+        "gen_model":        settings.LLM_MODEL,
+        "judge_model":      settings.JUDGE_MODEL,
+        "embedding_model":  settings.EMBEDDING_MODEL,
         "dataset_size":     len(pipeline_results),
         "success_count":    sum(1 for r in pipeline_results if r["status"] == "success"),
         "metrics":          metrics,
@@ -317,6 +324,11 @@ def print_comparison(
         before_run     = before_data.get("run_date", "")[:16]
         print(_box_line(f"  Before: {before_run} ({before_tag}, {before_data.get('dataset_size','?')}개)"))
         print(_box_line(f"  After : 방금 실행 ({after_tag}, {after_n}개)"))
+        # 모델이 바뀐 비교인지 한눈에 보이게 한다 — 생성 모델이 다르면 Δ의 원인이 다르다
+        b_gen, a_gen = before_data.get("gen_model", "?"), after_data.get("gen_model", "?")
+        b_jdg, a_jdg = before_data.get("judge_model", "?"), after_data.get("judge_model", "?")
+        print(_box_line(f"  생성 모델: {b_gen} → {a_gen}" + ("   ⚠️ 변경됨" if b_gen != a_gen else "")))
+        print(_box_line(f"  판정 모델: {b_jdg} → {a_jdg}" + ("   ⚠️ 변경됨 — Δ 해석 주의" if b_jdg != a_jdg else "   (고정)")))
         print(sep_mid)
         print(_box_line(f"  {'Metric':<22} {'Before':>7}  {'After':>7}  {'Δ':>6}  "))
         print(_box_line(f"  {'─'*22}  {'─'*7}  {'─'*7}  {'─'*6}  "))
@@ -413,7 +425,10 @@ async def main(smoke: bool = False, compare_only: bool = False):
     before_data = load_previous_results(exclude_path=saved_path)
     after_data  = {"metrics": metrics, "tag": tag,
                    "dataset_size": len(pipeline_results),
-                   "run_date": run_ts}
+                   "run_date": run_ts,
+                   # 저장 파일(save_result)과 같은 값을 넣는다 — 빠지면 비교 헤더에 "?"로 뜬다
+                   "gen_model": settings.LLM_MODEL,
+                   "judge_model": settings.JUDGE_MODEL}
 
     has_regression = print_comparison(before_data, after_data, run_ts)
 

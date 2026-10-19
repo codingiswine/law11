@@ -97,12 +97,17 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
 
+# RAGAS 판정기 — LLM_MODEL과 분리한다. 같은 값을 쓰면 생성 모델을 바꿀 때
+# 채점자도 같이 바뀌어 "답변이 좋아진 것"과 "채점이 후해진 것"을 구분할 수 없다.
+# 모델 A/B 중에는 이 값을 고정해 두어야 비교가 성립한다 (#57).
+JUDGE_MODEL = os.getenv("JUDGE_MODEL", "gpt-4o-mini")
+
 # ─────────────────────────────
 # 🏷️ 앱 버전 (단일 소스)
 # ─────────────────────────────
 # /health 가 반환하던 FastAPI(version=...)가 0.8.2에 멈춰 README 배지(1.9.x)와
 # 따로 놀았다. 여기서만 올리고, README 배지와의 일치는 tests/test_version.py 가 지킨다.
-APP_VERSION = "1.10.0"
+APP_VERSION = "1.11.0"
 
 # ─────────────────────────────
 # 🔐 관리자 엔드포인트 인증
