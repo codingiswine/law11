@@ -52,7 +52,7 @@ judge: `gpt-4o-mini` · ragas 0.1.21 기준 측정값입니다.
 | Answer Relevancy | 0.00 (측정 불가) | 0.58 |
 
 > ⚠️ 좌우 수치는 시스템 개선이 아니라 **정답지 교정**의 효과입니다 — 교정 전 골든셋은 13개 케이스의 조문 번호가 질문과 무관한 조문을 가리키고 있었고(#25), 그 상태의 낮은 수치는 시스템이 아니라 정답지의 오류를 측정한 값이었습니다.
-> LLM-judge 지표는 영어 프롬프트 기반이라 한국어 답변에는 보수적으로 채점되는 경향이 있으며, 절대값보다는 파이프라인 변경 전후의 **상대 비교(회귀 감지)** 용도로 사용합니다 (`--compare` 모드, 5% 이상 하락 시 exit 1).
+> LLM-judge 지표는 영어 프롬프트 기반이라 한국어 답변에는 보수적으로 채점되는 경향이 있으며, 절대값보다는 파이프라인 변경 전후의 **상대 비교(회귀 감지)** 용도로 사용합니다 (`--compare` 모드, 지표별 판정선 이상 하락 시 exit 1 — faithfulness 15% · context precision 3% · answer relevancy·context recall 2%, #59).
 > 검색 단계 단독 성능(교정 후): **Top-1 66.7% · Top-3 recall 83.3%** (`eval_retrieval`, 임베딩 검색만, LLM 무관 무료 측정).
 
 ### 골든 데이터셋 구성 (30개)
@@ -78,7 +78,7 @@ docker compose exec fastapi python -m eval.harness
 # 빠른 확인 (5케이스 smoke)
 docker compose exec fastapi python -m eval.harness --smoke
 
-# 회귀 테스트 (5% 이상 하락 시 exit 1)
+# 회귀 테스트 (지표별 판정선 이상 하락 시 exit 1)
 docker compose exec fastapi python -m eval.harness --compare
 
 # 라우터 정확도

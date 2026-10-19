@@ -71,7 +71,7 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 지표 | 수치 | 조건 |
 |---|---|---|
 | 검색 Top-3 recall | **96.7%** | 골든셋 30케이스 ¹ |
-| RAGAS Faithfulness / Answer Relevancy / Context Precision / Context Recall | **0.73~0.74 / 0.57 / 1.00 / 0.92~0.93** | 30케이스, gpt-4o-mini judge, 3회 관측 범위 ² |
+| RAGAS Faithfulness / Answer Relevancy / Context Precision / Context Recall | **0.77~0.83 / 0.575~0.577 / 0.986~0.990 / 0.933** | 30케이스, 판정기 `gpt-4o-mini`(생성기와 분리 — #57), 같은 조건 3회 관측 범위 ² |
 | 할루시네이션 | **명백한 날조 0/30** · GROUNDED 28/30 (93.3%) · Citation 누락 0건 | 골든셋 30케이스, DB 수록 9개 법령 범위 내 ³ |
 | 라우터 정확도 | **43/43 (100%)** | 키워드 fast-path + LLM 하이브리드, 판례 케이스 11개 포함 ⁴ |
 | 멀티턴 회귀 eval | 시나리오 5개 | 전부 mutation test(fix 되돌리기)로 회귀 감지력 검증 |
@@ -82,7 +82,16 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 문서화된 발견-수정 사이클 | changelog 59건 + 체계 도입 이전 7건 | 증상 → 근본 원인 → 실측 검증 형식, [CHANGELOG.md](CHANGELOG.md) |
 
 ¹ 복수 인정 조문 정책(#30)과 법령 용어 매핑(#33) 적용 후 값.
-² RAGAS 자체의 한국어 인코딩 버그를 근본 수정(#40)한 **이후** 관측값 전부: Faithfulness **0.69 / 0.74** (2026-09-05, 같은 날 2회) · **0.73** (2026-09-19, [결과 파일](law11_backend/eval/results/baseline_20260919_0650_full.json)). 전체 이력: [baseline_history.md](law11_backend/eval/results/baseline_history.md). 같은 날 2회 실행 간 편차(+7.5%, 0.6918→0.7438)가 2주 간격 재측정 편차(−2.0%, 0.7438→0.7289)보다 크다 — LLM-judge 비결정성이 시스템 변화보다 큰 노이즈원이라는 뜻. 이 분산 때문에 회귀 임계는 Faithfulness만 15%, 나머지 5%로 둔다(`eval/harness.py:76,81`). 09-19 판정: F −2.0% / AR +0.1% / CP 0.0% / CR +1.0%, 전부 임계 이내. #40 **이전**(2026-07-19, 인코딩 버그가 살아 있던 상태)의 0.86 / 0.79 / 0.71(#29)은 측정 조건이 달라 위 분포에 합치지 않는다. answer_relevancy는 #39에서 지표 제외했다가 #40에서 복구됨.
+² 2026-10-19 실측(#57~#59). 그 전까지 평가 하니스는 운영과 **다른 프롬프트·온도**로 답변을 만들어 채점하고 있었다 — RAGAS 수치가 실제 서비스 품질을 대변하지 못했다는 뜻이다. #57에서 운영 프롬프트·온도로 통일하고 판정기를 생성기와 분리한 뒤, 같은 조건 3회씩 돌려 노이즈부터 측정했다. 괄호 안은 상대 범위(최대−최소 ÷ 평균).
+
+| 조건 | Faithfulness | Answer Relevancy | Context Precision | Context Recall |
+|---|---|---|---|---|
+| 프롬프트 v1 (3회 평균) | 0.778 (2.50%) | 0.542 (0.80%) | 0.989 (1.48%) | 0.933 (0%) |
+| 프롬프트 v3 (3회 평균, #58) | 0.801 (**8.45%**) | **0.576** (0.35%) | 0.989 (0.34%) | 0.933 (0%) |
+
+#58의 프롬프트 개선으로 answer_relevancy가 노이즈의 7.6배 올랐고(0.5421 → 0.5755, 3회 모두 재현), 평균 답변 길이는 765자 → 386자로 줄었다. faithfulness는 평균이 올랐지만 v3 조건의 노이즈(8.45%)가 변화폭보다 커서 **개선을 주장하지 않는다** — 악화가 없었다는 것까지만 말할 수 있다. 노이즈가 조건에 따라 3.4배 달라지므로(2.50% ↔ 8.45%) 어떤 고정 임계값을 쓰든 faithfulness는 단일 실행 비교로 판단할 수 없다 (#59).
+
+결과 파일: [`baseline_20261019_0423_full.json`](law11_backend/eval/results/baseline_20261019_0423_full.json) (3회 중 중앙값, 커밋됨) · 전체 이력 [baseline_history.md](law11_backend/eval/results/baseline_history.md). #40 **이전**(2026-07-19, RAGAS 한국어 인코딩 버그가 살아 있던 상태)의 0.86 / 0.79 / 0.71(#29)과, #40~#56 구간의 0.69~0.74는 측정 조건이 달라 위 분포에 합치지 않는다. answer_relevancy는 #39에서 지표 제외했다가 #40에서 복구됨.
 ³ 나머지 2건은 표현이 뭉개진 PARTIAL. 판정기 자체의 거짓 지적을 #46에서 수정하고, 조작 답변 4종 음성 대조군으로 탐지력 유지를 확인. **DB에 있는 9개 법령 범위 내 결과이며, 범위 밖 질문(웹 폴백 경로)까지 보증하지 않습니다.**
 ⁴ 판례 라우팅 케이스는 #38에서 추가.
 ⁵ 상세는 #31.
@@ -223,21 +232,22 @@ async def _load_session_context(session_id: str, limit: int = 5) -> str:
 RAGAS 기반 오프라인 평가 + 라우터·검색·할루시네이션·멀티턴 회귀 eval. 평가 구조, 실행 명령, 베이스라인 이력, 부하 테스트 상세: [docs/eval.md](docs/eval.md)
 
 - **골든셋 30케이스** (`eval/golden_dataset.json`, 13건 오염 교정 후 — #25): 개념형 13 · 기준/설치 10 · 직접 조문 4 · 처벌 3
-- **메트릭**: RAGAS 4종 — Faithfulness · Answer Relevancy · Context Precision · Context Recall (judge `gpt-4o-mini`, ragas 0.1.21) + 검색 Top-k · 라우터 정확도 · 할루시네이션/Citation · 멀티턴 시나리오 5개(mutation test 검증)
-- **회귀 판정** (`python -m eval.harness --compare`): 직전 baseline 대비 5% 이상 하락 시 exit 1. Faithfulness만 15% — LLM-judge 실행 간 분산이 5%를 넘기 때문 (`eval/harness.py:76,81`)
+- **메트릭**: RAGAS 4종 — Faithfulness · Answer Relevancy · Context Precision · Context Recall (판정기 `JUDGE_MODEL`=`gpt-4o-mini`, 생성기 `LLM_MODEL`과 분리 — #57, ragas 0.1.21) + 검색 Top-k · 라우터 정확도 · 할루시네이션/Citation · 멀티턴 시나리오 5개(mutation test 검증)
+- **회귀 판정** (`python -m eval.harness --compare`): 직전 baseline 대비 **지표별** 판정선 이상 하락 시 exit 1 — faithfulness 15% · context precision 3% · answer relevancy 2% · context recall 2%. 각 값은 같은 조건 3회 실측 노이즈의 약 2배다 (`eval/harness.py:91`, 산출 근거 #59)
+- **노이즈 먼저 측정** (`--repeat N`): 같은 설정을 N회 돌려 평균·최소·최대·상대범위를 출력한다. 조건이 바뀌면 노이즈도 바뀌므로(v1 2.50% ↔ v3 8.45%) 변경 전후를 비교하기 전에 먼저 실행한다 (#59)
 
-대표 수치 (2026-09-19 재검증, 결과 파일 `eval/results/baseline_20260919_0650_full.json`):
+대표 수치 (RAGAS는 2026-10-19 재측정 3회 평균, 나머지는 2026-09-19 재검증):
 
 | 지표 | 값 |
 |---|---|
 | 검색 Top-3 recall | 96.7% (Top-1 76.7%) |
-| RAGAS F / AR / CP / CR | 0.73 / 0.57 / 1.00 / 0.93 — 직전 baseline 대비 전부 임계 이내 |
+| RAGAS F / AR / CP / CR | 0.80 / 0.576 / 0.99 / 0.93 — 같은 조건 3회 평균 (`baseline_20261019_0423_full.json`) |
 | 할루시네이션 | 명백한 날조 0/30 · GROUNDED 28/30 · Citation 누락 0 |
 | 라우터 정확도 | 43/43 (키워드·LLM 동일) |
 | 멀티턴 회귀 | 5/5 |
 | 부하 (2026-07-15) | 20명 동시 무실패, Total p50 11.2s |
 
-2026-09-19 재검증: pytest 68 · 라우터 43/43 · Top-3 recall 96.7% · 할루시네이션 0/30 · 멀티턴 5/5 · RAGAS 회귀 없음 — 전 항목 일치. (이후 #51에서 버전 동기화 테스트 2개 추가되어 현재 70개)
+2026-09-19 재검증: pytest 68 · 라우터 43/43 · Top-3 recall 96.7% · 할루시네이션 0/30 · 멀티턴 5/5 · RAGAS 회귀 없음 — 전 항목 일치. (이후 #51에서 버전 동기화 2개, #56에서 구간 계측 2개가 추가되어 현재 72개)
 
 ```bash
 docker compose exec fastapi pip install -r eval/requirements-eval.txt   # ragas는 컨테이너 안에만

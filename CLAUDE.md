@@ -116,7 +116,7 @@ RAG 검색 우선순위는 반드시 이 순서를 따른다:
 # 베이스라인 측정 (전체 30케이스)
 cd law11_backend && python -m eval.harness
 
-# 회귀 테스트 (직전 결과와 비교, 5% 이상 하락 시 exit 1)
+# 회귀 테스트 (직전 결과와 비교, 지표별 판정선 이상 하락 시 exit 1)
 python -m eval.harness --compare
 
 # 빠른 확인 (5케이스 smoke)
