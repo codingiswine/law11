@@ -1,6 +1,6 @@
 # Law11 — Korean Occupational Safety Law RAG Chatbot
 
-> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (56 documented find-fix cycles, plus 7 fixes that predate the changelog — see [CHANGELOG.md](CHANGELOG.md)).
+> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (59 documented find-fix cycles, plus 7 fixes that predate the changelog — see [CHANGELOG.md](CHANGELOG.md)).
 
 [![CI](https://github.com/codingiswine/law11/actions/workflows/ci.yml/badge.svg)](https://github.com/codingiswine/law11/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
@@ -15,23 +15,23 @@ A separate case-law tool runs the same retrieval chain over its own collection (
 
 ## Verified quality metrics
 
-All numbers are reproducible from the eval scripts in this repo (30-case corrected golden set, re-measured 2026-09-05):
+All numbers are reproducible from the eval scripts in this repo (30-case corrected golden set; RAGAS re-measured 2026-10-19, the rest 2026-09-19):
 
 | Metric | Value |
 |---|---|
 | Retrieval Top-3 recall | **96.7%** (30-case golden set; multi-accepted-article policy #30, statutory-term query expansion #33) |
-| RAGAS Faithfulness / Answer Relevancy / Context Precision / Context Recall | **0.74 / 0.57 / 1.00 / 0.92** (gpt-4o-mini judge, re-measured 2026-09-05 after fixing RAGAS's own Korean-encoding bug, #40) |
+| RAGAS Faithfulness / Answer Relevancy / Context Precision / Context Recall | **0.77–0.83 / 0.575–0.577 / 0.986–0.990 / 0.933** (range over 3 runs of the same configuration, 2026-10-19; judge `gpt-4o-mini`, kept separate from the generator model — #57). Until #57 the harness generated answers with a *different* prompt and temperature than production, so earlier figures did not describe the shipped system. Faithfulness noise is 8.45% under the current prompt, so a single-run comparison cannot establish an improvement on that metric — see the Korean README footnote 2 |
 | Hallucination (30-case golden set) | **0/30 outright fabrications** · 28/30 GROUNDED (93.3%; the other 2 are PARTIAL — imprecise phrasing, not false claims) · 0 citation misses — the judge's own false flags were fixed in #46, with detection power re-verified against 4 fabricated answers. **Scoped to the 9 laws in the DB; it does not cover out-of-scope questions that fall through to web search** |
 | Router accuracy | **43/43 (100%)** (keyword fast-path + LLM hybrid, incl. 11 case-law routing cases) |
 | Multi-turn regression evals | 5 scenarios, each **mutation-tested** (fix reverted → eval must fail) |
-| Automated tests / CI | 70 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
+| Automated tests / CI | 72 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
 | Load test | 20 concurrent users, zero failures (2× the design target) |
 | Fault injection | 5 dependencies (PG, Qdrant, OpenAI, Tavily, Naver) killed individually — 4 defects found and fixed (#31) |
-| Documented find-fix cycles | 56 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
+| Documented find-fix cycles | 59 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
 
 ## Engineering highlights
 
-The [changelog](CHANGELOG.md) documents 56 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
+The [changelog](CHANGELOG.md) documents 59 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
 
 - **The golden dataset was lying.** Retrieval eval showed 46.7% Top-3 recall; cross-checking failures against the DB revealed the *retrieval was right and the answer key was wrong* — 13/30 golden article numbers pointed at unrelated articles (e.g., "electric shock prevention" labeled as Article 132, which is about cranes). Correcting the labels moved recall to 83.3% and RAGAS Faithfulness from 0.44 to 0.74. (#25)
 - **193 articles were silently lost to a normalization collision.** Korean laws have branch articles (제14조**의2**, "Article 14-2"); the ingest pipeline collapsed them into the same key as their base article, and the upsert's `ON CONFLICT DO UPDATE` overwrote whichever came first — entire articles (including the one defining the national disaster response HQ) vanished without any error. On the query side the same normalization turned "제14조의2" into "142", matching Article 142. Fixed the scheme end-to-end and resynced: 1,436 → 1,629 articles, RAGAS Faithfulness 0.74 → 0.86. (#28)
@@ -43,7 +43,7 @@ The [changelog](CHANGELOG.md) documents 56 find-fix cycles in "symptom → root 
 
 ## Fixes that predate the changelog
 
-The numbered changelog (#1–#56) starts at `v1.0.1` (2026-07-16), when the
+The numbered changelog (#1–#59) starts at `v1.0.1` (2026-07-16), when the
 "symptom → root cause → measured verification" format was adopted. Earlier bug fixes
 exist only as commits; a later audit (`docs/defect_audit.md`) recovered them. They are
 listed separately so the existing numbering stays stable.
@@ -82,7 +82,7 @@ law_rag_tool retrieval order:
 
 | Command | What it measures |
 |---|---|
-| `python -m eval.harness` | RAGAS 4 metrics over the 30-case golden set, with regression compare (>5% drop → exit 1) |
+| `python -m eval.harness` | RAGAS 4 metrics over the 30-case golden set, with regression compare (per-metric gates: faithfulness 15%, context precision 3%, answer relevancy / context recall 2% — each ~2× the measured noise of that metric, #59). `--repeat N` measures that configuration's noise first |
 | `python -m eval.eval_retrieval` | Retrieval Top-1/Top-3 accuracy (embedding-only, free) |
 | `python -m eval.eval_router` | Router accuracy on 43 labeled cases |
 | `python -m eval.eval_hallucination` | LLM-judge groundedness + citation verification |
