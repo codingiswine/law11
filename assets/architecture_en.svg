@@ -114,16 +114,17 @@
   <!-- Supporting infra -->
   <rect x="1020" y="660" width="320" height="60" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
   <text x="1180" y="686" text-anchor="middle" font-size="13" font-weight="600" fill="#78350f">APScheduler</text>
-  <text x="1180" y="704" text-anchor="middle" font-size="10.5" fill="#92400e">Mon 3AM law · 4AM case law · daily 5AM backup</text>
+  <text x="1180" y="704" text-anchor="middle" font-size="10.5" fill="#92400e">Mon 3AM law · 4AM case law · daily 5AM backup (when always-on)</text>
 
   <!-- Monitoring -->
   <rect x="1020" y="740" width="320" height="60" rx="8" fill="#fffbeb" stroke="#d97706" stroke-width="1.5"/>
   <text x="1180" y="766" text-anchor="middle" font-size="13" font-weight="600" fill="#78350f">Prometheus</text>
-  <text x="1180" y="784" text-anchor="middle" font-size="10.5" fill="#92400e">Request count · latency · error rate metrics</text>
+  <text x="1180" y="784" text-anchor="middle" font-size="10.5" fill="#92400e">Multi-agent path metrics · main path timed by qa_logger</text>
 
   <!-- CI/eval -->
-  <rect x="60" y="800" width="1280" height="90" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+  <rect x="60" y="800" width="1280" height="112" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
   <text x="90" y="828" font-size="14" font-weight="700" fill="#14532d">Verification pipeline</text>
-  <text x="90" y="855" font-size="12" fill="#166534">Every commit (GitHub Actions CI) → 70 pytest tests · frontend typecheck/build   |   Run manually at checkpoints → RAGAS regression harness (fails on 5% drop) · multi-turn regression eval · load test (20 concurrent, zero failures) · fault injection (5 dependencies)</text>
-  <text x="90" y="876" font-size="12" fill="#166534">→ 55 changelog entries (48+7); 48 genuine defects root-caused and fixed</text>
+  <text x="90" y="855" font-size="12" fill="#166534">Every commit (GitHub Actions CI) → 73 pytest tests · frontend typecheck/build</text>
+  <text x="90" y="876" font-size="12" fill="#166534">Run manually at checkpoints → RAGAS regression harness (per-metric measured-noise gates) · multi-turn regression eval · load test (20 concurrent, zero failures) · fault injection (5 dependencies) · latency breakdown</text>
+  <text x="90" y="897" font-size="12" fill="#166534">→ 67 changelog entries (60+7); 60 genuine defects root-caused and fixed</text>
 </svg>
