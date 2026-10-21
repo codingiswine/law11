@@ -95,3 +95,12 @@ docs/interview_*.md
 
 # understand-anything 지식 그래프 (로컬 분석 산출물)
 .ua/
+
+# iFixAi 외부 감사 산출물 (2026-10-21) — 런이 INVALID였고 결과물이 수백 MB다.
+# 소견은 docs/roadmap.md P3에 요약해 남겼다.
+ifixai-results/
+ifixai-fixture.yaml
+ifixai-run.log
+scorecard.html
+runs/
+law11_backend/runs/
