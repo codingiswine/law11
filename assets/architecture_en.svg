@@ -126,5 +126,5 @@
   <text x="90" y="828" font-size="14" font-weight="700" fill="#14532d">Verification pipeline</text>
   <text x="90" y="855" font-size="12" fill="#166534">Every commit (GitHub Actions CI) → 84 pytest tests · frontend typecheck/build</text>
   <text x="90" y="876" font-size="12" fill="#166534">Run manually at checkpoints → RAGAS regression harness (per-metric measured-noise gates) · multi-turn regression eval · load test (20 concurrent, zero failures) · fault injection (5 dependencies) · latency breakdown</text>
-  <text x="90" y="897" font-size="12" fill="#166534">→ 68 changelog entries (61+7); 61 genuine defects root-caused and fixed</text>
+  <text x="90" y="897" font-size="12" fill="#166534">→ 69 changelog entries (62+7); 62 genuine defects root-caused and fixed</text>
 </svg>

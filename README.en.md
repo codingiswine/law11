@@ -1,11 +1,11 @@
 # Law11 — Korean Occupational Safety Law RAG Chatbot
 
-> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (61 documented find-fix cycles, plus 7 fixes that predate the changelog — see [CHANGELOG.md](CHANGELOG.md)).
+> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (62 documented find-fix cycles, plus 7 fixes that predate the changelog — see [CHANGELOG.md](CHANGELOG.md)).
 
 [![CI](https://github.com/codingiswine/law11/actions/workflows/ci.yml/badge.svg)](https://github.com/codingiswine/law11/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
-[![Version](https://img.shields.io/badge/Version-1.13.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.13.1-orange.svg)]()
 
 A domain-specialized RAG system over **9 Korean occupational-safety laws (1,629 articles)**. Built on a chatbot from a startup internship the year before, then rebuilt as an independent personal project — alongside an IT-academy internship — with a measurement-first engineering process.
 
@@ -21,17 +21,17 @@ All numbers are reproducible from the eval scripts in this repo (30-case correct
 |---|---|
 | Retrieval Top-3 recall | **96.7%** (30-case golden set; multi-accepted-article policy #30, statutory-term query expansion #33) |
 | RAGAS Faithfulness / Answer Relevancy / Context Precision / Context Recall | **0.77–0.83 / 0.575–0.577 / 0.986–0.990 / 0.933** (range over 3 runs of the same configuration, 2026-10-19; judge `gpt-4o-mini`, kept separate from the generator model — #57). Until #57 the harness generated answers with a *different* prompt and temperature than production, so earlier figures did not describe the shipped system. Faithfulness noise is 8.45% under the current prompt, so a single-run comparison cannot establish an improvement on that metric — see the Korean README footnote 2 |
-| Hallucination (30-case golden set) | **0/30 outright fabrications** · 28/30 GROUNDED (93.3%; the other 2 are PARTIAL — imprecise phrasing, not false claims) · 0 citation misses — the judge's own false flags were fixed in #46, with detection power re-verified against 4 fabricated answers. **Scoped to the 9 laws in the DB; it does not cover out-of-scope questions that fall through to web search** |
+| Hallucination (golden set) | **GROUNDED 27–28/28 (96.4–100%)** · 0 citation misses (identical across all 3 runs) | Range over 3 repeated runs. A *different* single case is flagged each run, so the variance is judge noise rather than a defect in any one answer (#62). 28 of the 30 golden cases are grounded in DB articles; the other 2 fall through to web search and are not scored (#61). The judge's own false flags were fixed in #46, with detection power re-verified against 4 fabricated answers. **Scoped to the 9 laws in the DB** |
 | Router accuracy | **43/43 (100%)** (keyword fast-path + LLM hybrid, incl. 11 case-law routing cases) |
 | Multi-turn regression evals | 5 scenarios, each **mutation-tested** (fix reverted → eval must fail) |
 | Automated tests / CI | 84 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
 | Load test | 20 concurrent users, zero failures (2× the design target) |
 | Fault injection | 5 dependencies (PG, Qdrant, OpenAI, Tavily, Naver) killed individually — 4 defects found and fixed (#31) |
-| Documented find-fix cycles | 61 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
+| Documented find-fix cycles | 62 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
 
 ## Engineering highlights
 
-The [changelog](CHANGELOG.md) documents 61 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
+The [changelog](CHANGELOG.md) documents 62 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
 
 - **The golden dataset was lying.** Retrieval eval showed 46.7% Top-3 recall; cross-checking failures against the DB revealed the *retrieval was right and the answer key was wrong* — 13/30 golden article numbers pointed at unrelated articles (e.g., "electric shock prevention" labeled as Article 132, which is about cranes). Correcting the labels moved recall to 83.3% and RAGAS Faithfulness from 0.44 to 0.74. (#25)
 - **193 articles were silently lost to a normalization collision.** Korean laws have branch articles (제14조**의2**, "Article 14-2"); the ingest pipeline collapsed them into the same key as their base article, and the upsert's `ON CONFLICT DO UPDATE` overwrote whichever came first — entire articles (including the one defining the national disaster response HQ) vanished without any error. On the query side the same normalization turned "제14조의2" into "142", matching Article 142. Fixed the scheme end-to-end and resynced: 1,436 → 1,629 articles, RAGAS Faithfulness 0.74 → 0.86. (#28)
@@ -43,7 +43,7 @@ The [changelog](CHANGELOG.md) documents 61 find-fix cycles in "symptom → root 
 
 ## Fixes that predate the changelog
 
-The numbered changelog (#1–#61) starts at `v1.0.1` (2026-07-16), when the
+The numbered changelog (#1–#62) starts at `v1.0.1` (2026-07-16), when the
 "symptom → root cause → measured verification" format was adopted. Earlier bug fixes
 exist only as commits; a later audit (`docs/defect_audit.md`) recovered them. They are
 listed separately so the existing numbering stays stable.
