@@ -56,7 +56,8 @@ def _extract_web_citations(answer: str) -> list:
             break
     return citations
 from datetime import datetime
-from typing import Optional, Dict
+from dataclasses import dataclass, field
+from typing import Optional, Dict, List
 from sqlalchemy import text
 from qdrant_client.http.models import FieldCondition, MatchValue, Filter
 from core.stream import ToolChunk
@@ -265,52 +266,74 @@ def _prepend_context(context: str, content: str) -> str:
 
 
 # ─────────────────────────────
-# 핵심 실행 (Async)
+# 계층형 검색 (운영 run() ↔ eval/retriever.py 단일 소스)
 # ─────────────────────────────
-async def run(plan):
-    query = plan.args.get("query", "")
-    context = plan.args.get("context", "")
-    yield ToolChunk(type="status", payload="⚖️ 법령 검색 시작...")
+_ARTICLE_RE = re.compile(r"(?:제)?\s*(\d+)\s*조(?:\s*의\s*(\d+))?")
 
+
+def parse_article_number(query: str) -> str:
+    """질문에서 조문 번호를 'N' / 'N의M' 스킴으로 추출. 없으면 빈 문자열."""
+    m = _ARTICLE_RE.search(query)
+    if not m:
+        return ""
+    return m.group(1) + (f"의{m.group(2)}" if m.group(2) else "")
+
+
+@dataclass
+class LawSearch:
+    """계층형 검색 결과 (PG → Qdrant → Web).
+
+    source: "pg" | "qdrant" | "web" | "missing" | "db_error"
+      · missing  — 법령명+조문번호를 물었는데 그 조문이 DB에 없음 (대체 검색 금지)
+      · db_error — PG 장애 + Qdrant 대체 조회까지 실패
+    articles: [{"law_name", "article_number", "text", "score"}]
+    steps:    SSE로 흘려보낼 상태 메시지 (호출부가 yield)
+    """
+    source: str
+    law_name: Optional[str]
+    article_number: str
+    is_direct_article: bool
+    articles: List[Dict]
+    enforcement_date: Optional[str] = None
+    steps: List[str] = field(default_factory=list)
+
+
+async def search_law_articles(query: str) -> LawSearch:
+    """법령 조문 계층형 검색 — 운영과 평가가 반드시 이 함수 하나만 쓴다.
+
+    ⚠️ 예전에는 run()과 eval/retriever.py가 검색 우선순위를 각자 구현했고,
+    30개 골든셋 중 3건에서 서로 다른 조문으로 돌고 있었다 (실측 2026-10-27):
+      · GS-013·GS-027 — 평가 쪽에 threshold 게이트가 없어서, 운영이 웹 폴백으로
+        넘기는 저유사도 결과(0.3548 / 0.4106)를 RAGAS 채점 근거로 쓰고 있었다.
+      · GS-026 — 평가 쪽에 '법령명 인식' 경로가 없어서, 운영이 1건(법령 필터
+        + threshold 0.5)만 쓰는 질문에 5건(priority 필터 + 0.45)을 넘기고 있었다.
+    즉 RAGAS 수치가 사용자가 실제로 타는 경로를 측정하지 않고 있었다. 검색
+    경로를 새로 붙일 때(MCP 등) 이 함수를 호출할 것 — 네 번째 사본을 만들지 않는다.
+    """
     law_name = detect_law_name(query)
-    article_match = re.search(r"(?:제)?\s*(\d+)\s*조(?:\s*의\s*(\d+))?", query)
-    article_number = ""
-    if article_match:
-        article_number = article_match.group(1)
-        if article_match.group(2):
-            article_number += f"의{article_match.group(2)}"
+    article_number = parse_article_number(query)
+    found = LawSearch(
+        source="web",
+        law_name=law_name,
+        article_number=article_number,
+        is_direct_article=bool(law_name and article_number),
+        articles=[],
+    )
 
-    is_direct_article_query = bool(law_name and article_number)
-    unknown_law_hint = mentions_unknown_law(query, law_name, article_number)
-
-    # ① 법령명 미인식 시 → 조건 기반 법령 우선 선택 후 Qdrant 검색
+    # ① 법령명 미인식 → 조건 기반 우선 법령으로 좁힌 뒤 의미 검색
     if not law_name:
-        # 키워드가 특정 법령을 암시하면 해당 법령으로 먼저 좁혀 검색한다.
-        priority_law = get_priority_law(query)
-        yield ToolChunk(type="status", payload="🧠 [Qdrant] 전체 법령 의미 검색 중...")
+        found.steps.append("🧠 [Qdrant] 전체 법령 의미 검색 중...")
         try:
             embedding = await get_embedding_async(expand_legal_terms(query))
-
-            # 우선 법령이 있으면 해당 법령 내에서 먼저 검색, 없으면 전체 검색
+            priority_law = get_priority_law(query)
             q_filter = (
                 Filter(must=[FieldCondition(key="law_name_norm", match=MatchValue(value=priority_law))])
                 if priority_law else None
             )
-            results = await qdrant.search(
-                COLLECTION,
-                embedding,
-                query_filter=q_filter,
-                limit=10,
-                with_payload=True
-            )
+            results = await qdrant.search(COLLECTION, embedding, query_filter=q_filter, limit=10, with_payload=True)
             # 우선 법령 검색에서 결과가 부족하면 전체 재검색
             if (not results or results[0].score < 0.45) and priority_law:
-                results = await qdrant.search(
-                    COLLECTION,
-                    embedding,
-                    limit=10,
-                    with_payload=True
-                )
+                results = await qdrant.search(COLLECTION, embedding, limit=10, with_payload=True)
             # ⚠️ Cross-Encoder 리랭킹 제거 (v1.5.0): ms-marco-MiniLM은 영어 전용이라
             # 한국어 조문을 사실상 무작위 재배열했음 — 교정된 골든셋 30케이스 실측에서
             # Top-1 66.7%(벡터 순서) → 13.3%(EN CE), 다국어 CE도 벡터를 못 이김
@@ -320,42 +343,230 @@ async def run(plan):
             # 사용자가 법령 용어를 쓰지 않아도 관련 조문을 건질 수 있어야 한다.
             # 단, unknown_law_hint(구체적 법명+조문을 물었는데 그 법이 DB에
             # 없는 경우)면 threshold를 넘겨도 신뢰하지 않고 웹 폴백으로 보낸다.
-            if results and results[0].score >= 0.45 and not unknown_law_hint:
-                # 중복 조문 제거 (코사인 유사도 순서 기준)
-                deduped = []
-                seen_articles = set()
-                for r in results:
-                    text_val = r.payload.get("text", "")
-                    r_law = r.payload.get("law_name", "")
-                    r_article = r.payload.get("article_number_norm", "")
-                    dedup_key = f"{r_law}:{r_article}"
-                    if text_val and dedup_key not in seen_articles:
-                        seen_articles.add(dedup_key)
-                        deduped.append((r_law, r_article, text_val, r.score))
-
+            if results and results[0].score >= 0.45 and not mentions_unknown_law(query, law_name, article_number):
+                seen = set()
+                for hit in results:
+                    text_val = hit.payload.get("text", "")
+                    key = (hit.payload.get("law_name", ""), hit.payload.get("article_number_norm", ""))
+                    if text_val and key not in seen:   # 중복 조문 제거
+                        seen.add(key)
+                        found.articles.append({
+                            "law_name": key[0], "article_number": key[1],
+                            "text": text_val, "score": hit.score,
+                        })
                 # ✅ 화면에 표시되는 %(Qdrant 코사인 유사도)와 배지 순서가 일치하도록
                 # 코사인 점수 내림차순 정렬 유지
-                deduped.sort(key=lambda x: x[3], reverse=True)
+                found.articles.sort(key=lambda a: a["score"], reverse=True)
+                found.source = "qdrant"
+                found.steps.append(f"✅ [Qdrant] 관련 조문 {len(found.articles)}개 발견")
+                return found
+        except Exception as e:
+            print(f"⚠️ Qdrant 검색 실패: {e}")
+            found.steps.append("⚠️ Qdrant 검색 실패 → 대체 경로 진행")
+        found.steps.append("⚠️ 관련 법령 없음 → Web 검색으로 보완")
+        return found
 
-                contexts = [f"[{law} {article_display(art)}]\n{text}" for law, art, text, _ in deduped]
-                sources = [f"{law} {article_display(art)}" for law, art, _, _ in deduped]
-                citations = [
-                    {"law_name": law, "article_number": art, "score": round(score, 4), "rank": rank}
-                    for rank, (law, art, _, score) in enumerate(deduped, start=1)
-                ]
-                combined = "\n\n".join(contexts)
-                yield ToolChunk(type="status", payload=f"✅ [Qdrant] 관련 조문 {len(contexts)}개 발견")
-                yield ToolChunk(type="meta", payload={
-                    "query_type": "semantic",
-                    "selected_source": "qdrant",
-                    "selected_articles": sources,
-                    "citations": citations,
-                    "fallback_used": False,
-                    "confidence_score": deduped[0][3] if deduped else None,
-                    "tool": "law_rag_tool",
-                })
+    law_norm = normalize_law_name(law_name)
 
-                prompt = f"""너는 대한민국 산업안전보건 법령 전문가야.
+    # ② 법령명 + 조문번호 → PostgreSQL 정확 매칭
+    # (조문번호가 없으면 article_number_norm='' 로 조회하는 셈이라 어차피 0건 — 건너뛴다)
+    if article_number:
+        pg_error = False
+        try:
+            async with async_engine.connect() as conn:
+                row = (await conn.execute(
+                    text("""
+                        SELECT text, enforcement_date
+                        FROM law_chunks
+                        WHERE law_name_norm = :law AND article_number_norm = :num
+                        LIMIT 1;
+                    """),
+                    {"law": law_norm, "num": normalize_article(article_number)},
+                )).fetchone()
+            if row:
+                found.source = "pg"
+                found.enforcement_date = row[1]
+                found.articles = [{
+                    "law_name": law_name, "article_number": article_number,
+                    "text": row[0], "score": 1.0,
+                }]
+                found.steps.append("✅ [PostgreSQL] 조문 발견")
+                return found
+        except Exception as e:
+            pg_error = True
+            print(f"⚠️ [PostgreSQL] 조회 실패: {e}")
+            found.steps.append("⚠️ [PostgreSQL] 오류 → 대체 경로 진행")
+
+        # 조문 번호가 명시된 직접 조회에서 PG miss는 "해당 조문 없음"을 의미 —
+        # Qdrant로 다른 조문을 대신 꺼내지 않는다.
+        if not pg_error:
+            found.source = "missing"
+            return found
+
+        # ⚠️ PG "오류"와 "row 없음"을 반드시 구분한다. 장애 주입 실측: PG가 죽었을 때
+        # 이 분기가 "제17조는 데이터베이스에 존재하지 않습니다"라고 답했다 — 인프라
+        # 장애를 조문 부재로 오보하는 허위 응답 (README #31). 오류 시에는 Qdrant에
+        # 같은 조문이 norm 필터로 존재하므로 scroll 정확 조회로 대체하고, 그마저
+        # 실패하면 정직하게 일시 오류를 안내한다.
+        try:
+            points, _ = await qdrant.scroll(
+                COLLECTION,
+                scroll_filter=Filter(must=[
+                    FieldCondition(key="law_name_norm", match=MatchValue(value=law_norm)),
+                    FieldCondition(key="article_number_norm", match=MatchValue(value=normalize_article(article_number))),
+                ]),
+                limit=1,
+                with_payload=True,
+            )
+            if points:
+                p = points[0].payload
+                found.source = "qdrant"
+                found.enforcement_date = p.get("enforcement_date", "")
+                found.articles = [{
+                    "law_name": law_name, "article_number": article_number,
+                    "text": p.get("text", ""), "score": 1.0,
+                }]
+                found.steps.append("✅ [Qdrant] 대체 정확 조회 성공 (PG 장애)")
+                return found
+        except Exception as e2:
+            print(f"⚠️ [Qdrant] 대체 조회도 실패: {e2}")
+        found.source = "db_error"
+        return found
+
+    # ③ 법령명만 인식 → 해당 법령 안에서만 의미 검색
+    found.steps.append("🧠 [Qdrant] 벡터 검색 중...")
+    try:
+        embedding = await get_embedding_async(expand_legal_terms(query))
+        q_filter = Filter(must=[FieldCondition(key="law_name_norm", match=MatchValue(value=law_norm))])
+        results = (await qdrant.search(COLLECTION, embedding, query_filter=q_filter, limit=10, with_payload=True))[:5]
+        # 0.50: 이미 법령명으로 범위를 좁혔는데 여기서도 미달이면
+        # 해당 법령 DB에 답이 없다는 신호 → web fallback이 더 정확.
+        # ①(0.45)보다 엄격한 이유: 검색 범위가 좁을수록 낮은 score = 진짜 없음.
+        if results and results[0].score >= 0.5:
+            best = results[0]
+            found.source = "qdrant"
+            found.enforcement_date = best.payload.get("enforcement_date", "")
+            found.articles = [{
+                "law_name": best.payload.get("law_name", law_name),
+                "article_number": best.payload.get("article_number_norm", ""),
+                "text": best.payload.get("text", ""),
+                "score": best.score,
+            }]
+            found.steps.append(f"✅ [Qdrant] 유사도 {best.score:.2f} 조문 발견")
+            return found
+    except Exception as e:
+        print(f"⚠️ Qdrant 검색 실패: {e}")
+        found.steps.append("⚠️ Qdrant 검색 실패 → 대체 경로 진행")
+    found.steps.append("⚠️ 조문 없음 → Web fallback 실행")
+    return found
+
+
+async def _answer_from_web(query: str, context: str, is_direct_article_query: bool):
+    """조문 검색 실패 시 웹 검색으로 보완. 운영 두 경로가 쓰던 동일 블록을 합친 것."""
+    web_result = await summarize_web(query, context=context)
+    # ⚠️ 검색 결과가 하나도 없으면 GPT 생성 자체를 중단한다. 장애 주입 실측:
+    # 웹 소스(Tavily+Naver) 전멸 상태에서 "검색 결과 없음" 문구를 GPT에 넘기면
+    # "소화기는 100㎡당 1개" 같은 수치 기준을 근거 0에서 지어내 법적 근거
+    # 포맷으로 출력했다 (README #31). 법률 챗봇에서 근거 없는 확답은 오답보다 나쁘다.
+    if not web_result.get("raw_results"):
+        yield ToolChunk(type="text", payload="현재 웹 검색이 일시적으로 불가하여 관련 법령 정보를 확인할 수 없습니다. 잠시 후 다시 시도해 주시기 바랍니다.")
+        yield ToolChunk(type="status", payload="⚠️ 웹 검색 결과 없음 — 근거 없는 답변 생성 중단")
+        return
+
+    resp = await settings.openai_client.chat.completions.create(
+        model=settings.LLM_MODEL,
+        timeout=settings.GPT_TIMEOUT_SECONDS,
+        messages=[
+            {"role": "system", "content": WEB_SYSTEM_PROMPT},
+            {"role": "user", "content": _prepend_context(context, f"""질문: {query}
+
+아래 검색 결과를 참고해 반드시 구체적인 조문 번호(제X조 제X항)를 인용하여 답변해.
+법령명만 나열하지 말고, 해당 조문이 무엇을 규정하는지 내용과 함께 명시해.
+
+[검색 결과]
+{web_result.get("summaries", "")}
+
+출력 형식:
+🔹 **결론** (한 문장 요약)
+🔹 **판단 근거** (상황 조건 및 적용 요건)
+🔹 **법적 근거**
+  - [법령명] 제X조 제X항: (해당 조문이 규정하는 내용)
+🔹 **적용 방법** (제공된 조문에 명시된 사항만 정리 — 조문에 없는 일반적 안전관리 조언은 쓰지 마)
+🔹 **출처** (법령명 + 조문번호)""")},
+        ],
+        temperature=0.2,
+    )
+    answer = resp.choices[0].message.content.strip()
+    yield ToolChunk(type="meta", payload={
+        "query_type": "direct_article" if is_direct_article_query else "semantic",
+        "selected_source": "web",
+        "selected_articles": [],
+        "fallback_used": True,
+        "confidence_score": None,
+        "tool": "law_rag_tool",
+    })
+    yield ToolChunk(type="text", payload=answer)
+    web_cites = _extract_web_citations(answer)
+    if web_cites:
+        yield ToolChunk(type="source", payload={"retrieved_laws": web_cites})
+    yield ToolChunk(type="status", payload="✅ Web 보완 검색 완료")
+
+
+# ─────────────────────────────
+# 핵심 실행 (Async)
+# ─────────────────────────────
+async def run(plan):
+    query = plan.args.get("query", "")
+    context = plan.args.get("context", "")
+    yield ToolChunk(type="status", payload="⚖️ 법령 검색 시작...")
+
+    found = await search_law_articles(query)
+    for step in found.steps:
+        yield ToolChunk(type="status", payload=step)
+
+    law_name = found.law_name
+    article_number = found.article_number
+    is_direct_article_query = found.is_direct_article
+
+    if found.source == "missing":
+        yield ToolChunk(type="text", payload=(
+            f"**{law_name} {article_display(article_number)}**는 데이터베이스에 존재하지 않습니다.\n\n"
+            f"조문 번호를 확인하시거나 법령명이 정확한지 검토해 주십시오."
+        ))
+        yield ToolChunk(type="status", payload="✅ 조회 완료 (조문 없음)")
+        return
+
+    if found.source == "db_error":
+        yield ToolChunk(type="text", payload="일시적인 데이터베이스 오류로 조문을 조회하지 못했습니다. 잠시 후 다시 시도해 주시기 바랍니다.")
+        yield ToolChunk(type="status", payload="⚠️ 조회 실패 (일시적 DB 오류)")
+        return
+
+    if found.source == "web":
+        async for chunk in _answer_from_web(query, context, is_direct_article_query):
+            yield chunk
+        return
+
+    # Ⓐ 법령명 미인식 + 의미 검색 성공 → 검색된 여러 조문을 한 번에 근거로 답변
+    if not law_name:
+        citations = [
+            {"law_name": a["law_name"], "article_number": a["article_number"],
+             "score": round(a["score"], 4), "rank": rank}
+            for rank, a in enumerate(found.articles, start=1)
+        ]
+        combined = "\n\n".join(
+            f"[{a['law_name']} {article_display(a['article_number'])}]\n{a['text']}" for a in found.articles
+        )
+        yield ToolChunk(type="meta", payload={
+            "query_type": "semantic",
+            "selected_source": "qdrant",
+            "selected_articles": [f"{a['law_name']} {article_display(a['article_number'])}" for a in found.articles],
+            "citations": citations,
+            "fallback_used": False,
+            "confidence_score": found.articles[0]["score"] if found.articles else None,
+            "tool": "law_rag_tool",
+        })
+
+        prompt = f"""너는 대한민국 산업안전보건 법령 전문가야.
 사용자 질문: "{query}"
 아래 법령 조문을 반드시 인용하여 실무 중심으로 답변해.
 ⚠️ 법적 근거(조문 원문 인용) 외의 모든 설명은 반드시 존댓말(합쇼체)로 작성해.
@@ -374,251 +585,48 @@ async def run(plan):
 [관련 법령 조문]
 {combined}"""
 
-                stream = await settings.openai_client.chat.completions.create(
-                    model=settings.LLM_MODEL,
-                    timeout=settings.GPT_TIMEOUT_SECONDS,
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": _prepend_context(context, prompt)},
-                    ],
-                    temperature=0.2,
-                    stream=True,
-                )
-                answer_parts = []
-                async for chunk in stream:
-                    delta = chunk.choices[0].delta.content
-                    if delta:
-                        answer_parts.append(delta)
-                        yield ToolChunk(type="text", payload=delta)
-
-                # ⚠️ 프롬프트 지시("빠짐없이 인용")만으로는 GPT가 가끔 검색된 조문
-                # 일부를 답변에서 빠뜨린다 (실측 확인, 2026-09-05 — 5개 중 2개
-                # 누락되는 재현 사례 발견, temperature=0.2라 완전히 결정적이지
-                # 않음). 코드 레벨에서 한 번 더 확인해 빠진 조문이 있으면 footer로
-                # 명시한다 — 사용자가 검색은 됐지만 답변엔 없는 조문을 놓치지 않게.
-                full_answer = "".join(answer_parts)
-                missing = [c for c in citations if article_display(c["article_number"]) not in full_answer]
-                if missing:
-                    missing_str = ", ".join(
-                        f"[{c['law_name']} {article_display(c['article_number'])}]" for c in missing
-                    )
-                    footer = f"\n\n📎 **함께 검색된 조문** (위 답변에 직접 인용되지 않음, 참고): {missing_str}"
-                    yield ToolChunk(type="text", payload=footer)
-
-                yield ToolChunk(type="source", payload={"retrieved_laws": citations})
-                yield ToolChunk(type="status", payload="✅ 법령 검색 완료")
-                return
-        except Exception as e:
-            print(f"⚠️ Qdrant 검색 실패: {e}")
-            yield ToolChunk(type="status", payload="⚠️ Qdrant 검색 실패 → 대체 경로 진행")
-
-        # Qdrant에서 못 찾은 경우만 Web fallback
-        yield ToolChunk(type="status", payload="⚠️ 관련 법령 없음 → Web 검색으로 보완")
-        web_result = await summarize_web(query, context=context)
-        # ⚠️ 검색 결과가 하나도 없으면 GPT 생성 자체를 중단한다. 장애 주입 실측:
-        # 웹 소스(Tavily+Naver) 전멸 상태에서 "검색 결과 없음" 문구를 GPT에 넘기면
-        # "소화기는 100㎡당 1개" 같은 수치 기준을 근거 0에서 지어내 법적 근거
-        # 포맷으로 출력했다 (README #31). 법률 챗봇에서 근거 없는 확답은 오답보다 나쁘다.
-        if not web_result.get("raw_results"):
-            yield ToolChunk(type="text", payload="현재 웹 검색이 일시적으로 불가하여 관련 법령 정보를 확인할 수 없습니다. 잠시 후 다시 시도해 주시기 바랍니다.")
-            yield ToolChunk(type="status", payload="⚠️ 웹 검색 결과 없음 — 근거 없는 답변 생성 중단")
-            return
-        web_summary = web_result.get("summaries", "")
-        resp = await settings.openai_client.chat.completions.create(
+        stream = await settings.openai_client.chat.completions.create(
             model=settings.LLM_MODEL,
             timeout=settings.GPT_TIMEOUT_SECONDS,
             messages=[
-                {"role": "system", "content": WEB_SYSTEM_PROMPT},
-                {"role": "user", "content": _prepend_context(context, f"""질문: {query}
-
-아래 검색 결과를 참고해 반드시 구체적인 조문 번호(제X조 제X항)를 인용하여 답변해.
-법령명만 나열하지 말고, 해당 조문이 무엇을 규정하는지 내용과 함께 명시해.
-
-[검색 결과]
-{web_summary}
-
-출력 형식:
-🔹 **결론** (한 문장 요약)
-🔹 **판단 근거** (상황 조건 및 적용 요건)
-🔹 **법적 근거**
-  - [법령명] 제X조 제X항: (해당 조문이 규정하는 내용)
-🔹 **적용 방법** (제공된 조문에 명시된 사항만 정리 — 조문에 없는 일반적 안전관리 조언은 쓰지 마)
-🔹 **출처** (법령명 + 조문번호)""")},
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": _prepend_context(context, prompt)},
             ],
             temperature=0.2,
+            stream=True,
         )
-        answer = resp.choices[0].message.content.strip()
-        yield ToolChunk(type="meta", payload={
-            "query_type": "semantic",
-            "selected_source": "web",
-            "selected_articles": [],
-            "fallback_used": True,
-            "confidence_score": None,
-            "tool": "law_rag_tool",
-        })
-        yield ToolChunk(type="text", payload=answer)
-        web_cites = _extract_web_citations(answer)
-        if web_cites:
-            yield ToolChunk(type="source", payload={"retrieved_laws": web_cites})
-        yield ToolChunk(type="status", payload="✅ Web 보완 검색 완료")
+        answer_parts = []
+        async for chunk in stream:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                answer_parts.append(delta)
+                yield ToolChunk(type="text", payload=delta)
+
+        # ⚠️ 프롬프트 지시("빠짐없이 인용")만으로는 GPT가 가끔 검색된 조문
+        # 일부를 답변에서 빠뜨린다 (실측 확인, 2026-09-05 — 5개 중 2개
+        # 누락되는 재현 사례 발견, temperature=0.2라 완전히 결정적이지
+        # 않음). 코드 레벨에서 한 번 더 확인해 빠진 조문이 있으면 footer로
+        # 명시한다 — 사용자가 검색은 됐지만 답변엔 없는 조문을 놓치지 않게.
+        full_answer = "".join(answer_parts)
+        missing = [c for c in citations if article_display(c["article_number"]) not in full_answer]
+        if missing:
+            missing_str = ", ".join(
+                f"[{c['law_name']} {article_display(c['article_number'])}]" for c in missing
+            )
+            yield ToolChunk(type="text", payload=f"\n\n📎 **함께 검색된 조문** (위 답변에 직접 인용되지 않음, 참고): {missing_str}")
+
+        yield ToolChunk(type="source", payload={"retrieved_laws": citations})
+        yield ToolChunk(type="status", payload="✅ 법령 검색 완료")
         return
 
-    # ② PostgreSQL 검색 (1차: 정확한 조문 검색)
-    text_val, enforcement_date = None, None
-    selected_source: Optional[str] = None
-    selected_articles: list = []
-    pg_error = False
-    search_law_norm = normalize_law_name(law_name)
-    search_article_norm = normalize_article(article_number)
-
-    try:
-        async with async_engine.connect() as conn:
-            result = await conn.execute(
-                text("""
-                    SELECT text, enforcement_date
-                    FROM law_chunks
-                    WHERE law_name_norm = :law AND article_number_norm = :num
-                    LIMIT 1;
-                """),
-                {"law": search_law_norm, "num": search_article_norm}
-            )
-            row = result.fetchone()
-            if row:
-                text_val, enforcement_date = row
-                selected_source = "pg"
-                selected_articles = [f"{law_name} {article_display(article_number)}"] if article_number else [law_name]
-                yield ToolChunk(type="status", payload="✅ [PostgreSQL] 조문 발견")
-            else:
-                yield ToolChunk(type="status", payload="🔍 [Qdrant] 벡터 검색으로 전환...")
-    except Exception as e:
-        pg_error = True
-        print(f"⚠️ [PostgreSQL] 조회 실패: {e}")
-        yield ToolChunk(type="status", payload="⚠️ [PostgreSQL] 오류 → 대체 경로 진행")
-
-    # ③ Qdrant (2차: 벡터 유사도 검색)
-    # 단, 조문 번호가 명시된 직접 조회(is_direct_article_query)에서 PG miss는
-    # "해당 조문 없음"을 의미 — Qdrant로 다른 조문을 대신 꺼내지 않는다.
-    if not text_val and is_direct_article_query:
-        # ⚠️ PG "오류"와 "row 없음"을 반드시 구분한다. 장애 주입 실측: PG가 죽었을 때
-        # 이 분기가 "제17조는 데이터베이스에 존재하지 않습니다"라고 답했다 — 인프라
-        # 장애를 조문 부재로 오보하는 허위 응답 (README #31). 오류 시에는 Qdrant에
-        # 같은 조문이 norm 필터로 존재하므로 scroll 정확 조회로 대체하고, 그마저
-        # 실패하면 정직하게 일시 오류를 안내한다.
-        if pg_error:
-            try:
-                points, _ = await qdrant.scroll(
-                    COLLECTION,
-                    scroll_filter=Filter(must=[
-                        FieldCondition(key="law_name_norm", match=MatchValue(value=search_law_norm)),
-                        FieldCondition(key="article_number_norm", match=MatchValue(value=search_article_norm)),
-                    ]),
-                    limit=1,
-                    with_payload=True,
-                )
-                if points:
-                    p = points[0].payload
-                    text_val = p.get("text", "")
-                    enforcement_date = p.get("enforcement_date", "")
-                    selected_source = "qdrant"
-                    selected_articles = [f"{law_name} {article_display(article_number)}"]
-                    yield ToolChunk(type="status", payload="✅ [Qdrant] 대체 정확 조회 성공 (PG 장애)")
-            except Exception as e2:
-                print(f"⚠️ [Qdrant] 대체 조회도 실패: {e2}")
-            if not text_val:
-                yield ToolChunk(type="text", payload="일시적인 데이터베이스 오류로 조문을 조회하지 못했습니다. 잠시 후 다시 시도해 주시기 바랍니다.")
-                yield ToolChunk(type="status", payload="⚠️ 조회 실패 (일시적 DB 오류)")
-                return
-        else:
-            msg = f"**{law_name} {article_display(article_number)}**는 데이터베이스에 존재하지 않습니다.\n\n조문 번호를 확인하시거나 법령명이 정확한지 검토해 주십시오."
-            yield ToolChunk(type="text", payload=msg)
-            yield ToolChunk(type="status", payload="✅ 조회 완료 (조문 없음)")
-            return
-
-    if not text_val:
-        yield ToolChunk(type="status", payload="🧠 [Qdrant] 벡터 검색 중...")
-        try:
-            embedding = await get_embedding_async(expand_legal_terms(query))
-            q_filter = Filter(
-                must=[
-                    FieldCondition(key="law_name_norm", match=MatchValue(value=search_law_norm)),
-                ]
-            )
-            results = await qdrant.search(
-                COLLECTION,
-                embedding,
-                query_filter=q_filter,
-                limit=10,
-                with_payload=True
-            )
-            # 리랭킹 제거 (v1.5.0, Case A와 동일 근거) — 벡터 순서 상위 5개 사용
-            results = results[:5]
-            # 0.50: 이미 법령명으로 범위를 좁혔는데 여기서도 미달이면
-            # 해당 법령 DB에 답이 없다는 신호 → web fallback이 더 정확.
-            # Case A(0.45)보다 엄격한 이유: 검색 범위가 좁을수록 낮은 score = 진짜 없음.
-            if results and results[0].score >= 0.5:
-                best = results[0]
-                text_val = best.payload.get("text", "")
-                enforcement_date = best.payload.get("enforcement_date", "")
-                selected_source = "qdrant"
-                r_law = best.payload.get("law_name", law_name)
-                r_art = best.payload.get("article_number_norm", "")
-                selected_articles = [f"{r_law} {article_display(r_art)}" if r_art else r_law]
-                yield ToolChunk(type="status", payload=f"✅ [Qdrant] 유사도 {best.score:.2f} 조문 발견")
-        except Exception as e:
-            print(f"⚠️ Qdrant 검색 실패: {e}")
-            yield ToolChunk(type="status", payload="⚠️ Qdrant 검색 실패 → 대체 경로 진행")
-
-    # ④ Web fallback (모든 조문 검색 실패)
-    if not text_val or not isinstance(text_val, str) or not text_val.strip():
-        yield ToolChunk(type="status", payload="⚠️ 조문 없음 → Web fallback 실행")
-        web_result = await summarize_web(query, context=context)
-        # ⚠️ 검색 결과가 하나도 없으면 GPT 생성 자체를 중단한다. 장애 주입 실측:
-        # 웹 소스(Tavily+Naver) 전멸 상태에서 "검색 결과 없음" 문구를 GPT에 넘기면
-        # "소화기는 100㎡당 1개" 같은 수치 기준을 근거 0에서 지어내 법적 근거
-        # 포맷으로 출력했다 (README #31). 법률 챗봇에서 근거 없는 확답은 오답보다 나쁘다.
-        if not web_result.get("raw_results"):
-            yield ToolChunk(type="text", payload="현재 웹 검색이 일시적으로 불가하여 관련 법령 정보를 확인할 수 없습니다. 잠시 후 다시 시도해 주시기 바랍니다.")
-            yield ToolChunk(type="status", payload="⚠️ 웹 검색 결과 없음 — 근거 없는 답변 생성 중단")
-            return
-        web_summary = web_result.get("summaries", "")
-        resp = await settings.openai_client.chat.completions.create(
-            model=settings.LLM_MODEL,
-            timeout=settings.GPT_TIMEOUT_SECONDS,
-            messages=[
-                {"role": "system", "content": WEB_SYSTEM_PROMPT},
-                {"role": "user", "content": _prepend_context(context, f"""질문: {query}
-
-아래 검색 결과를 참고해 반드시 구체적인 조문 번호(제X조 제X항)를 인용하여 답변해.
-법령명만 나열하지 말고, 해당 조문이 무엇을 규정하는지 내용과 함께 명시해.
-
-[검색 결과]
-{web_summary}
-
-출력 형식:
-🔹 **결론** (한 문장 요약)
-🔹 **판단 근거** (상황 조건 및 적용 요건)
-🔹 **법적 근거**
-  - [법령명] 제X조 제X항: (해당 조문이 규정하는 내용)
-🔹 **적용 방법** (제공된 조문에 명시된 사항만 정리 — 조문에 없는 일반적 안전관리 조언은 쓰지 마)
-🔹 **출처** (법령명 + 조문번호)""")},
-            ],
-            temperature=0.2,
-        )
-        answer = resp.choices[0].message.content.strip()
-        yield ToolChunk(type="meta", payload={
-            "query_type": "direct_article" if is_direct_article_query else "semantic",
-            "selected_source": "web",
-            "selected_articles": [],
-            "fallback_used": True,
-            "confidence_score": None,
-            "tool": "law_rag_tool",
-        })
-        yield ToolChunk(type="text", payload=answer)
-        web_cites = _extract_web_citations(answer)
-        if web_cites:
-            yield ToolChunk(type="source", payload={"retrieved_laws": web_cites})
-        yield ToolChunk(type="status", payload="✅ Web fallback 완료")
-        return
+    # Ⓑ 단일 조문 확보 (PG 정확 매칭 또는 법령 필터 의미 검색)
+    best = found.articles[0]
+    text_val = best["text"]
+    enforcement_date = found.enforcement_date
+    selected_source = found.source
+    selected_articles = [
+        f"{best['law_name']} {article_display(best['article_number'])}" if best["article_number"] else best["law_name"]
+    ]
 
     # ⑤ 조문 발견 시 GPT 요약
     pg_citations = [

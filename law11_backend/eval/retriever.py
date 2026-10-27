@@ -5,16 +5,15 @@ retriever.py
 ─────────────────────────────────────────────────────────────
 평가용 RAG 파이프라인 래퍼.
 
-기존 rag_service의 임베딩·벡터 검색 함수를 재사용하되,
-GPT 답변은 직접 호출 (DB 이력 / LangChain Memory 사이드이펙트 없음).
+검색은 운영과 같은 함수(law_rag_tool.search_law_articles)를 그대로 호출하고,
+GPT 답변만 직접 생성한다 (DB 이력 / LangChain Memory 사이드이펙트 없음).
 
 단독 실행 시 연결 테스트:
     cd law11_backend
-    source .venv/bin/activate
+    source ../.venv/bin/activate
     python -m eval.retriever
 """
 
-import re
 import sys
 import asyncio
 from pathlib import Path
@@ -23,17 +22,11 @@ from typing import List, Dict, Any
 BACKEND_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(BACKEND_ROOT))
 
-from sqlalchemy import text as sqltext
-
 from app.config import settings
-from app.services.rag_service import get_embedding_async, search_qdrant_async
 from app.tools.law_rag_tool import (
     article_display,
-    expand_legal_terms,
-    detect_law_name,
-    get_priority_law,
-    normalize_law_name,
-    SYSTEM_PROMPT,          # 운영과 같은 프롬프트로 평가한다 (#57)
+    search_law_articles,   # 운영과 같은 계층형 검색 (PG → Qdrant → Web)
+    SYSTEM_PROMPT,         # 운영과 같은 프롬프트로 평가한다 (#57)
 )
 
 openai_client = settings.openai_client
@@ -43,75 +36,44 @@ openai_client = settings.openai_client
 # 다른 프롬프트로 채점하고 있었기 때문에, RAGAS 수치가 실제 답변 품질을
 # 대변하지 못했다. 단일 소스로 통일한다 (#57).
 
+# 2026-10-27 이전에는 검색 우선순위도 여기에 따로 구현돼 있었고, 운영과
+# 30개 골든셋 중 3건에서 서로 다른 조문을 쓰고 있었다 — threshold 게이트
+# 누락(GS-013·GS-027)과 법령명 인식 경로 누락(GS-026). search_law_articles
+# 하나만 호출하도록 바꿔 검색 경로를 단일 소스로 통일한다.
+
 # 운영 생성 온도와 동일하게 맞춘다 (law_rag_tool.py의 chat.completions 호출들)
 GEN_TEMPERATURE = 0.2
 
 
-async def retrieve_and_generate(
-    question: str,
-    limit: int = 5,
-) -> Dict[str, Any]:
-    """
-    질문에 대해 Qdrant 검색 + GPT 답변 생성 후 RAGAS 평가용 딕셔너리 반환.
-
-    Args:
-        question: 사용자 질문
-        limit: Qdrant 검색 결과 수 (default 5)
+async def retrieve_and_generate(question: str) -> Dict[str, Any]:
+    """운영과 같은 경로로 검색 + GPT 답변 생성 후 RAGAS 평가용 딕셔너리 반환.
 
     Returns:
         {
             "question": str,
             "answer": str,
-            "contexts": List[str],           # RAGAS용 조문 텍스트 리스트
-            "retrieved_articles": List[str]  # ["산업안전보건법 제17조", ...]
+            "contexts": List[str],            # RAGAS용 조문 텍스트 리스트
+            "retrieved_articles": List[str],  # ["산업안전보건법 제17조", ...]
+            "source": str,                    # pg | qdrant | web | missing | db_error
         }
+
+    ⚠️ source가 "web"/"missing"/"db_error"면 contexts가 비어 있다 — 운영이
+    DB 조문 없이 답하는 경우라, RAGAS는 harness.compute_ragas에서 자동
+    제외된다 (채점 대상은 조문 근거가 있는 케이스뿐). 제외된 건수는
+    harness 리포트의 ragas_scored / web_fallback 항목으로 남는다.
     """
-    # ⚠️ 프로덕션(law_rag_tool)과 같은 검색 우선순위를 따른다 (v1.6.1):
-    # ① 법령명+조문번호가 명시된 질문 → PostgreSQL 정확 매칭
-    # ② 아니면 Qdrant 의미 검색 (조건 키워드가 법령을 암시하면 해당 법령 필터)
-    # 예전에는 ①을 건너뛰고 순수 벡터만 측정해, direct_article 질문의 RAGAS
-    # 수치가 사용자가 실제로 타는 경로를 반영하지 않았다.
-    law_name = detect_law_name(question)
-    m = re.search(r"(?:제)?\s*(\d+)\s*조(?:\s*의\s*(\d+))?", question)
-    article_norm = ""
-    if m:
-        article_norm = m.group(1) + (f"의{m.group(2)}" if m.group(2) else "")
-
-    if law_name and article_norm:
-        sql = sqltext("""
-            SELECT text FROM law_chunks
-            WHERE law_name_norm = :law AND article_number_norm = :num LIMIT 1
-        """)
-        async with settings.async_engine.connect() as conn:
-            row = (await conn.execute(
-                sql, {"law": normalize_law_name(law_name), "num": article_norm}
-            )).fetchone()
-        if row:
-            label = f"{law_name} {article_display(article_norm)}"
-            return await _generate(question, [row[0].strip()], [label])
-
-    # 임베딩 생성 (SQLite 캐시 활용) 후 Qdrant 의미 검색.
-    # 프로덕션과 동일하게, 우선 법령 필터 결과가 부실하면(top score < 0.45)
-    # 전체 법령으로 재검색한다.
-    embedding = await get_embedding_async(expand_legal_terms(question))
-    priority_law = get_priority_law(question)
-    qdrant_results = await search_qdrant_async(embedding, limit=limit, law_name_norm=priority_law)
-    if priority_law and (not qdrant_results or qdrant_results[0]["score"] < 0.45):
-        qdrant_results = await search_qdrant_async(embedding, limit=limit)
+    found = await search_law_articles(question)
 
     contexts: List[str] = []
     retrieved_articles: List[str] = []
-
-    for result in qdrant_results:
-        payload = result.get("payload", {})
-        r_law = payload.get("law_name", "")
-        article_num = payload.get("article_number_norm", "")
-        article_text = payload.get("text", "")
-
-        if article_text.strip():
-            contexts.append(article_text.strip())
-            label = f"{r_law} {article_display(article_num)}" if article_num else r_law
-            retrieved_articles.append(label)
+    for a in found.articles:
+        text_val = (a.get("text") or "").strip()
+        if not text_val:
+            continue
+        contexts.append(text_val)
+        retrieved_articles.append(
+            f"{a['law_name']} {article_display(a['article_number'])}" if a["article_number"] else a["law_name"]
+        )
 
     if not contexts:
         return {
@@ -119,9 +81,12 @@ async def retrieve_and_generate(
             "answer": "관련 법령 조문을 찾을 수 없습니다.",
             "contexts": [],
             "retrieved_articles": [],
+            "source": found.source,
         }
 
-    return await _generate(question, contexts, retrieved_articles)
+    out = await _generate(question, contexts, retrieved_articles)
+    out["source"] = found.source
+    return out
 
 
 async def _generate(question: str, contexts: List[str], retrieved_articles: List[str]) -> Dict[str, Any]:
@@ -167,6 +132,7 @@ if __name__ == "__main__":
 
         result = await retrieve_and_generate(test_q)
 
+        print(f"검색 경로: {result['source']}")
         print(f"검색된 조문: {result['retrieved_articles']}")
         print(f"\n답변 (앞 300자):\n{result['answer'][:300]}")
         print(f"\ncontexts 수: {len(result['contexts'])}")

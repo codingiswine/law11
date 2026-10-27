@@ -18,6 +18,7 @@ import sys
 import json
 import asyncio
 import argparse
+from collections import Counter
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
@@ -180,6 +181,7 @@ async def run_pipeline(dataset: List[Dict]) -> List[Dict]:
                 "contexts":         out["contexts"],
                 "ground_truth":     item["ground_truth"],
                 "retrieved_articles": out["retrieved_articles"],
+                "source":           out.get("source", ""),
                 "status":           "success",
             })
             print(f"         contexts={len(out['contexts'])}, answer={len(out['answer'])}자")
@@ -242,6 +244,11 @@ def save_result(pipeline_results: List[Dict], metrics: Dict, tag: str) -> Path:
         "embedding_model":  settings.EMBEDDING_MODEL,
         "dataset_size":     len(pipeline_results),
         "success_count":    sum(1 for r in pipeline_results if r["status"] == "success"),
+        # ⚠️ RAGAS는 조문 근거가 있는 케이스만 채점한다(compute_ragas의 contexts 필터).
+        # 운영이 웹 폴백으로 넘기는 질문은 분모에서 빠지므로, 빠진 건수를 남기지
+        # 않으면 "30케이스 측정"이라고 잘못 읽게 된다.
+        "ragas_scored":     sum(1 for r in pipeline_results if r["status"] == "success" and r["contexts"]),
+        "source_breakdown": dict(Counter(r.get("source", "") for r in pipeline_results)),
         "metrics":          metrics,
         "per_case_results": pipeline_results,
     }
