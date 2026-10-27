@@ -24,7 +24,7 @@ All numbers are reproducible from the eval scripts in this repo (30-case correct
 | Hallucination (30-case golden set) | **0/30 outright fabrications** · 28/30 GROUNDED (93.3%; the other 2 are PARTIAL — imprecise phrasing, not false claims) · 0 citation misses — the judge's own false flags were fixed in #46, with detection power re-verified against 4 fabricated answers. **Scoped to the 9 laws in the DB; it does not cover out-of-scope questions that fall through to web search** |
 | Router accuracy | **43/43 (100%)** (keyword fast-path + LLM hybrid, incl. 11 case-law routing cases) |
 | Multi-turn regression evals | 5 scenarios, each **mutation-tested** (fix reverted → eval must fail) |
-| Automated tests / CI | 73 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
+| Automated tests / CI | 84 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
 | Load test | 20 concurrent users, zero failures (2× the design target) |
 | Fault injection | 5 dependencies (PG, Qdrant, OpenAI, Tavily, Naver) killed individually — 4 defects found and fixed (#31) |
 | Documented find-fix cycles | 61 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |

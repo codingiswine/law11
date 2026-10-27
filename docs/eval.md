@@ -11,7 +11,8 @@ law11_backend/eval/
 ├── harness.py               # 통합 진입점: 베이스라인 + 회귀 + smoke
 ├── seed_golden_dataset.py   # DB 조문 → 골든셋 초안 자동 생성
 ├── golden_dataset.json      # 30개 테스트 케이스 (수동 검수)
-├── retriever.py             # 평가용 RAG 래퍼 (non-streaming)
+├── retriever.py             # 평가용 RAG 래퍼 — 검색은 운영과 같은
+│                            #   law_rag_tool.search_law_articles() 호출 (#61)
 ├── run_eval.py              # RAGAS 메트릭 계산 및 결과 저장
 ├── eval_router.py           # 라우터 정확도 평가
 ├── eval_retrieval.py        # 검색 성능 (top-k) 평가
