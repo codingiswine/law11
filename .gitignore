@@ -75,6 +75,9 @@ law11_backend/eval/results/*.json
 # README 핵심 수치의 재검증 근거로 인용한 실행 결과는 예외적으로 추적 (2026-09-19)
 !law11_backend/eval/results/baseline_20260919_0650_full.json
 !law11_backend/eval/results/baseline_20261019_0423_full.json
+# #61 이후 베이스라인 + 그 위에서 3회 반복한 할루시네이션 판정 중 3회차 (2026-10-27)
+!law11_backend/eval/results/baseline_20261027_0705_full.json
+!law11_backend/eval/results/hallucination_report.json
 
 # =========================================
 # 🛠️ INTERNAL DEV DOCS (Claude Code 워크플로우)
