@@ -1,6 +1,9 @@
-import re, json, asyncio, time
+import re, json, asyncio, time, uuid
 from datetime import date
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+
+from app.config import settings as _settings
+from app.rate_limit import limiter
 from fastapi.responses import StreamingResponse, HTMLResponse, Response
 from typing import AsyncGenerator, List, Optional
 from sqlalchemy import text
@@ -182,17 +185,33 @@ async def run_tool(plan) -> AsyncGenerator[ToolChunk, None]:
 # 🚀 FastAPI 엔드포인트 (완전 async)
 # ─────────────────────────────
 # 🚀 FastAPI 엔드포인트 (완전 async)
+def _internal_error(e: Exception, where: str) -> HTTPException:
+    """내부 예외를 사용자에게 그대로 돌려주지 않는다 (#66).
+
+    detail=str(e)로 내보내면 asyncpg 예외에 테이블·컬럼명이나 쿼리 일부가
+    섞여 나간다. 공격자에겐 스키마 정찰 단서이고, 사용자에겐 읽을 수 없는
+    문자열일 뿐이다. 전문은 로그에 남기고 응답에는 로그와 대조할 ref만 준다.
+    """
+    ref = uuid.uuid4().hex[:8]
+    logger.error(f"❌ [{where}] ref={ref} {e}", exc_info=True)
+    return HTTPException(
+        status_code=500,
+        detail=f"서버 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요. (ref: {ref})",
+    )
+
+
 @router.post("/ask")
-async def ask_law11(request: QueryRequest):
+@limiter.limit(_settings.RATE_LIMIT_ASK)
+async def ask_law11(request: Request, body: QueryRequest):
     """질문 → Router → ToolPlan → Tool 실행 → Stream"""
     user_id = "law11_user"
-    session_id = request.session_id
-    logger.info(f"🚀 [요청 수신] {request.question}")
+    session_id = body.session_id
+    logger.info(f"🚀 [요청 수신] {body.question}")
 
     try:
         # ① ToolPlan 생성 (라우팅 구간 계측)
         _t_route = time.perf_counter()
-        plan = await _detect_tool(user_id, request.question, session_id)
+        plan = await _detect_tool(user_id, body.question, session_id)
         routing_sec = round(time.perf_counter() - _t_route, 3)
         full_answer_parts: List[str] = []
 
@@ -236,7 +255,7 @@ async def ask_law11(request: QueryRequest):
             if meta_payload is not None:
                 tool_sec = round(time.perf_counter() - t0, 3)
                 qa_logger.log_request(
-                    query=request.question,
+                    query=body.question,
                     query_type=meta_payload.get("query_type", ""),
                     selected_source=meta_payload.get("selected_source", ""),
                     selected_articles=meta_payload.get("selected_articles", []),
@@ -262,7 +281,7 @@ async def ask_law11(request: QueryRequest):
                 logger.warning("⚠️ 빈 답변 — chat_history 저장 스킵")
                 return
             try:
-                assistant_id = await save_chat_history(user_id, request.question, full_answer, final_tool_name, session_id=session_id)
+                assistant_id = await save_chat_history(user_id, body.question, full_answer, final_tool_name, session_id=session_id)
                 # case_law_rag_tool 결과는 스키마가 달라(사건번호/법원명 등) 별도 테이블에 저장
                 if plan.tool == "case_law_rag_tool":
                     await save_case_citations(assistant_id, pending_citations)
@@ -278,8 +297,7 @@ async def ask_law11(request: QueryRequest):
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     except Exception as e:
-        logger.error(f"❌ [백엔드 에러] {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e, "백엔드 에러")
 
 
 # ─────────────────────────────
@@ -326,8 +344,7 @@ async def get_chat_history(
 
             return {"total": len(history), "history": history}
     except Exception as e:
-        logger.error(f"⚠️ [History 조회 실패] {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e, "History 조회 실패")
 
 
 @router.get("/history/stats")
@@ -361,8 +378,7 @@ async def get_history_stats():
 
             return {"stats": stats}
     except Exception as e:
-        logger.error(f"⚠️ [Stats 조회 실패] {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e, "Stats 조회 실패")
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -511,11 +527,12 @@ async def dashboard():
 # 🤖 LangGraph Multi-Agent 엔드포인트
 # ─────────────────────────────
 @router.post("/ask-multi")
-async def ask_law11_multi_agent(request: QueryRequest):
+@limiter.limit(_settings.RATE_LIMIT_ASK)
+async def ask_law11_multi_agent(request: Request, body: QueryRequest):
     """LangGraph Multi-Agent 시스템을 활용한 질문 응답 (메트릭 수집 포함)"""
     user_id = "law11_user"
-    session_id = request.session_id
-    logger.info(f"🤖 [Multi-Agent] 요청 수신: {request.question}")
+    session_id = body.session_id
+    logger.info(f"🤖 [Multi-Agent] 요청 수신: {body.question}")
 
     try:
         full_answer_parts: List[str] = []
@@ -534,7 +551,7 @@ async def ask_law11_multi_agent(request: QueryRequest):
             selected_agent = "unknown"
             try:
                 # Multi-Agent 실행
-                final_state = await run_multi_agent(user_id, request.question, session_id)
+                final_state = await run_multi_agent(user_id, body.question, session_id)
 
                 # 답변을 chunk로 나눠서 스트리밍
                 answer = final_state.get("final_answer", "")
@@ -562,7 +579,7 @@ async def ask_law11_multi_agent(request: QueryRequest):
                 tool_name = final_state.get("selected_tool", "").split("_")[0]
 
                 try:
-                    await save_chat_history(user_id, request.question, full_answer, tool_name, session_id=session_id)
+                    await save_chat_history(user_id, body.question, full_answer, tool_name, session_id=session_id)
                     yield f"data: {json.dumps({'event': 'status', 'payload': '✅ Multi-Agent 처리 완료'})}\n\n"
                 except Exception as e:
                     logger.error(f"⚠️ [DB 저장 실패] {e}")
@@ -584,8 +601,7 @@ async def ask_law11_multi_agent(request: QueryRequest):
         return StreamingResponse(event_stream(), media_type="text/event-stream")
 
     except Exception as e:
-        logger.error(f"❌ [Multi-Agent 에러] {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e, "Multi-Agent 에러")
 
 
 # ─────────────────────────────
@@ -628,8 +644,7 @@ async def submit_feedback(request: FeedbackRequest):
         logger.info(f"👍 [피드백 저장] id={request.message_id} value={request.value}")
         return {"status": "ok"}
     except Exception as e:
-        logger.error(f"⚠️ [피드백 저장 실패] {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e, "피드백 저장 실패")
 
 
 @router.get("/health")
@@ -672,8 +687,7 @@ async def get_session(session_id: str, limit: int = 50):
         ]
         return {"session_id": session_id, "total": len(history), "history": history}
     except Exception as e:
-        logger.error(f"⚠️ [Session 조회 실패] {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e, "Session 조회 실패")
 
 
 @router.delete("/session/{session_id}", status_code=204)
@@ -685,8 +699,7 @@ async def delete_session(session_id: str):
             await conn.execute(sql, {"session_id": session_id})
         logger.info(f"🗑️ [Session 삭제] {session_id}")
     except Exception as e:
-        logger.error(f"⚠️ [Session 삭제 실패] {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e, "Session 삭제 실패")
 
 
 # ─────────────────────────────
@@ -726,6 +739,5 @@ async def get_law_article(name: str, article: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"[법령 조회 실패] {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise _internal_error(e, "법령 조회 실패")
 

@@ -25,6 +25,26 @@ jobs:
           OPENAI_API_KEY: sk-dummy-ci
           DB_PASS: dummy
 
+  # 의존성 취약점 스캔 (#67)
+  #
+  # 빌드를 깨뜨리지 않는다(continue-on-error). 취약점 공시는 우리 코드와 무관하게
+  # 제3자 일정으로 터지는데, 그때 무관한 PR의 CI가 빨개지면 사람들은 결국
+  # 스캔 자체를 무시하게 된다. 결과는 PR 체크에 남겨 보이게만 하고, 조치 여부는
+  # dependabot PR에서 판단한다.
+  audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: law11_backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pip-audit
+      - run: pip-audit -r requirements.txt --desc
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

@@ -8,9 +8,23 @@ import asyncio
 import pytest
 from unittest.mock import AsyncMock, patch
 
+from starlette.requests import Request
+
 from app.api.models import QueryRequest
 from app.api.routes import ask_law11
 from core.stream import ToolChunk
+
+
+def _req() -> Request:
+    """레이트리밋(#65) 데코레이터가 starlette Request를 요구하므로 최소 scope로 만든다.
+    엔드포인트를 HTTP 없이 직접 호출하는 테스트라 ASGI scope를 손으로 준다."""
+    return Request({
+        "type": "http",
+        "method": "POST",
+        "path": "/api/ask",
+        "headers": [],
+        "client": ("127.0.0.1", 0),
+    })
 
 SEARCH_SEC = 0.05   # 검색 구간 흉내
 GEN_SEC = 0.05      # 생성 구간 흉내
@@ -51,7 +65,7 @@ async def test_timings_recorded_with_stage_timeline():
          patch("app.api.routes.save_chat_history", AsyncMock(return_value=1)), \
          patch("app.api.routes.save_citations", AsyncMock()), \
          patch("app.api.routes.qa_logger.log_request") as mock_log:
-        resp = await ask_law11(QueryRequest(question="제38조 알려줘"))
+        resp = await ask_law11(_req(), QueryRequest(question="제38조 알려줘"))
         await _drain(resp)
 
     mock_log.assert_called_once()
@@ -84,7 +98,7 @@ async def test_no_meta_chunk_skips_logging():
     with patch("app.api.routes._detect_tool", AsyncMock(return_value=plan)), \
          patch("app.api.routes.run_tool", _no_meta), \
          patch("app.api.routes.qa_logger.log_request") as mock_log:
-        resp = await ask_law11(QueryRequest(question="아무거나"))
+        resp = await ask_law11(_req(), QueryRequest(question="아무거나"))
         await _drain(resp)
 
     mock_log.assert_not_called()

@@ -118,6 +118,19 @@ APP_VERSION = "1.13.1"
 ADMIN_API_KEY = os.getenv("ADMIN_API_KEY")
 
 # ─────────────────────────────
+# 🚦 레이트리밋 (#65)
+# ─────────────────────────────
+# /api/ask 는 인증 없이 열려 있는데 한 번 호출에 GPT 생성 + 임베딩 + 최악의
+# 경우 웹 검색 20초를 쓴다. 스크립트로 때리면 서버가 죽기 전에 OpenAI·Tavily
+# 요금이 먼저 터진다 — 가용성이 아니라 비용이 먼저 무너지는 형태의 DoS다.
+# 부하테스트 20명은 정상 사용자 기준이지 악의적 트래픽 기준이 아니었다.
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() != "false"
+# LLM 호출 경로 — 사람이 읽고 다음 질문을 하는 속도를 감안한 값
+RATE_LIMIT_ASK = os.getenv("RATE_LIMIT_ASK", "10/minute")
+# 그 외 조회성 엔드포인트
+RATE_LIMIT_DEFAULT = os.getenv("RATE_LIMIT_DEFAULT", "60/minute")
+
+# ─────────────────────────────
 # 🌐 CORS 설정
 # ─────────────────────────────
 # .env의 CORS_ORIGINS(콤마 구분)로 배포 도메인 추가. 미설정 시 로컬 개발 기본값 사용.

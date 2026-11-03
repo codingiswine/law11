@@ -3,9 +3,13 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.api.routes import router as api_router
 from app.config import settings
+from app.rate_limit import limiter
 from app.services.law_scheduler import start_scheduler, stop_scheduler
 from core.logger import *
 
@@ -23,6 +27,12 @@ app = FastAPI(
     version=settings.APP_VERSION,
     lifespan=lifespan,
 )
+
+# 레이트리밋 (#65) — 미등록 라우트까지 기본 한도를 걸려면 미들웨어가 필요하고,
+# /ask 처럼 비싼 경로는 아래 routes.py에서 더 strict한 한도를 따로 건다.
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

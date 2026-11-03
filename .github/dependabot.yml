@@ -1,0 +1,30 @@
+# 의존성 취약점 상시 감시 (#67)
+#
+# requirements.txt를 정확한 버전으로 고정한 것은 재현성을 위해서다. 다만 고정은
+# "알아서 올라가지 않는다"는 뜻이기도 해서, 감시가 없으면 시간이 지날수록 알려진
+# 취약점을 그대로 안고 간다. 고정 + 미감시 조합이 위험하다.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /law11_backend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+
+  - package-ecosystem: npm
+    directory: /law11_frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+
+  # 액션 자체도 공급망 경로다 (actions/checkout 등)
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "ci"
