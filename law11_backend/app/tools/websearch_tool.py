@@ -10,6 +10,8 @@ websearch_tool.py (v4.0, Tavily)
 """
 
 import aiohttp
+
+from app.tools._web_utils import UNTRUSTED_RULE, fence_untrusted
 import asyncio
 from typing import List, Dict
 try:
@@ -140,7 +142,8 @@ async def summarize_web(query: str, max_results: int = 8, context: str = "") -> 
     search_context = "\n\n".join(
         [f"[{i+1}] {r['title']}\n{r['snippet']}\n{r['link']}" for i, r in enumerate(results)]
     )
-    user_content = f"질문: {query}\n\n검색 결과:\n{search_context}"
+    # 검색 결과는 제3자가 쓴 텍스트다 — 울타리로 가둬서 넣는다 (#64)
+    user_content = f"질문: {query}\n\n{fence_untrusted(search_context, '웹 검색 결과')}"
     if context:
         user_content = f"[이전 대화]\n{context}\n\n{user_content}"
 
@@ -151,7 +154,8 @@ async def summarize_web(query: str, max_results: int = 8, context: str = "") -> 
             "이전 대화가 주어지면 '그거'/'그건' 같은 지시어가 무엇을 가리키는지 이전 대화를 참고해서 파악하고,\n"
             "파악한 대상(주제)을 답변 첫 문장에 명시한 뒤 그 주제와 관련지어 요약해.\n"
             "검색 결과가 그 주제와 무관하면 무관하다고 밝히고 주제 중심으로 답해.\n"
-            "[뉴스]\n1. 제목 / 핵심 요약\n[블로그]\n1. 작성자 / 주요 관점 요약"
+            "[뉴스]\n1. 제목 / 핵심 요약\n[블로그]\n1. 작성자 / 주요 관점 요약\n"
+            + UNTRUSTED_RULE
         )},
         {"role": "user", "content": user_content}
     ]

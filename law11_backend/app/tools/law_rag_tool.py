@@ -62,6 +62,7 @@ from sqlalchemy import text
 from qdrant_client.http.models import FieldCondition, MatchValue, Filter
 from core.stream import ToolChunk
 from app.tools.websearch_tool import summarize_web
+from app.tools._web_utils import UNTRUSTED_RULE, fence_untrusted
 from app.services.embedding_cache import get_embedding_async
 try:
     from app.config import settings   # ✅ Docker 실행 시
@@ -140,7 +141,7 @@ SYSTEM_PROMPT = """
 DB 조문이 있으면 해당 조문만을 근거로, 웹 fallback 시에는 웹에서 가져온 법조문을 출처와 함께 제공한다.
 """
 
-WEB_SYSTEM_PROMPT = """너는 대한민국 법령 전문가 AI 어시스턴트다.
+WEB_SYSTEM_PROMPT = ("""너는 대한민국 법령 전문가 AI 어시스턴트다.
 법령 데이터베이스에 해당 조문이 없어 웹 검색 결과를 바탕으로 답변한다.
 
 [답변 원칙]
@@ -152,7 +153,10 @@ WEB_SYSTEM_PROMPT = """너는 대한민국 법령 전문가 AI 어시스턴트�
 
 [금지 사항]
 - 근거 없이 수치나 조건을 임의로 생성하는 것 금지
-- "일반적으로", "보통은" 등으로 포장해 확인되지 않은 내용을 추가하는 것 금지"""
+- "일반적으로", "보통은" 등으로 포장해 확인되지 않은 내용을 추가하는 것 금지
+"""
+    + UNTRUSTED_RULE
+)
 
 
 # ─────────────────────────────
@@ -484,7 +488,7 @@ async def _answer_from_web(query: str, context: str, is_direct_article_query: bo
 법령명만 나열하지 말고, 해당 조문이 무엇을 규정하는지 내용과 함께 명시해.
 
 [검색 결과]
-{web_result.get("summaries", "")}
+{fence_untrusted(web_result.get("summaries", ""), "웹 검색 요약")}
 
 출력 형식:
 🔹 **결론** (한 문장 요약)
