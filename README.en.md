@@ -17,6 +17,8 @@ A separate case-law tool runs the same retrieval chain over its own collection (
 
 All numbers are reproducible from the eval scripts in this repo (30-case corrected golden set; RAGAS re-measured 2026-10-19, the rest 2026-09-19):
 
+> ⚠️ **Measurement snapshot** — **Retrieval recall, RAGAS and hallucination** below were measured against the law corpus **as of 2026-10-27 (1,629 articles)**. A DRF resync on 2026-11-03 brought the corpus to **1,641 articles** and changed the text of 22 articles (#63); these three metrics have not been re-measured since. Router accuracy, pytest, load test and fault injection do not depend on article content.
+
 | Metric | Value |
 |---|---|
 | Retrieval Top-3 recall | **96.7%** (30-case golden set; multi-accepted-article policy #30, statutory-term query expansion #33) |
@@ -24,7 +26,7 @@ All numbers are reproducible from the eval scripts in this repo (30-case correct
 | Hallucination (golden set) | **GROUNDED 27–28/28 (96.4–100%)** · 0 citation misses (identical across all 3 runs) | Range over 3 repeated runs. A *different* single case is flagged each run, so the variance is judge noise rather than a defect in any one answer (#62). 28 of the 30 golden cases are grounded in DB articles; the other 2 fall through to web search and are not scored (#61). The judge's own false flags were fixed in #46, with detection power re-verified against 4 fabricated answers. **Scoped to the 9 laws in the DB** |
 | Router accuracy | **43/43 (100%)** (keyword fast-path + LLM hybrid, incl. 11 case-law routing cases) |
 | Multi-turn regression evals | 5 scenarios, each **mutation-tested** (fix reverted → eval must fail) |
-| Automated tests / CI | 84 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
+| Automated tests / CI | 85 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
 | Load test | 20 concurrent users, zero failures (2× the design target) |
 | Fault injection | 5 dependencies (PG, Qdrant, OpenAI, Tavily, Naver) killed individually — 4 defects found and fixed (#31) |
 | Documented find-fix cycles | 63 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
