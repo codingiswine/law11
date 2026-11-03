@@ -152,7 +152,14 @@ def clean_text(text: str) -> str:
 # 번호가 포함되어 있으므로(예: "1 제4조...") 별도 추출 시 번호가 중복된다.
 # 항/호/목 같은 컨테이너 키는 재귀 대상이어야 하므로 화이트리스트가 아닌
 # 정확한 메타 키 이름 목록으로 걸러낸다 (패턴 매칭보다 오탐/누락이 적음).
-_NUMBER_ONLY_KEYS = {"항번호", "호번호", "목번호", "조문번호"}
+# 호가지번호도 같은 계열 — "호내용"이 이미 "3의2. ..."로 시작하는데 따로 추출되어
+# 본문에 단독 "2" 줄이 섞여 들어갔다 (2026-11-03 실측: 산업안전보건법 제49조 등 44곳).
+_NUMBER_ONLY_KEYS = {"항번호", "호번호", "목번호", "조문번호", "호가지번호"}
+
+# DRF가 항 단위로 내려주는 개정 메타데이터. 값이 "개정"/"신설"과 "2026.10.27"이라
+# 본문에 그대로 섞여 들어간다. "항내용" 끝에 이미 "<개정 2026.10.27>" 태그가
+# 들어 있으므로 중복이다. 개정이 있는 조문에만 나타나 오래 드러나지 않았다.
+_REVISION_META_KEYS = {"항제개정유형", "항제개정일자문자열"}
 
 
 def deep_extract_text(value) -> List[str]:
@@ -163,7 +170,7 @@ def deep_extract_text(value) -> List[str]:
             out.extend(deep_extract_text(v))
     elif isinstance(value, dict):
         for k, v in value.items():
-            if k in _NUMBER_ONLY_KEYS or k.startswith("@"):
+            if k in _NUMBER_ONLY_KEYS or k in _REVISION_META_KEYS or k.startswith("@"):
                 continue
             out.extend(deep_extract_text(v))
     elif isinstance(value, str):
