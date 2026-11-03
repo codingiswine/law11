@@ -14,7 +14,7 @@ slowapi==0.1.10
 # ────────────────────────────────────────────
 # 🗄️ Database & ORM
 # ────────────────────────────────────────────
-sqlalchemy==2.0.36
+sqlalchemy==2.1.6
 asyncpg==0.30.0              # PostgreSQL async driver
 greenlet>=3.0.0              # SQLAlchemy async 브리지. Linux 컨테이너에서는 sqlalchemy가
                              # 알아서 끌고 오지만 Apple Silicon(platform_machine=arm64)은
