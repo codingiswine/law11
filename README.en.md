@@ -1,6 +1,6 @@
 # Law11 — Korean Occupational Safety Law RAG Chatbot
 
-> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (68 documented find-fix cycles, plus 7 fixes that predate the changelog — see [CHANGELOG.md](CHANGELOG.md)).
+> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (71 documented find-fix cycles, plus 7 fixes that predate the changelog — see [CHANGELOG.md](CHANGELOG.md)).
 
 [![CI](https://github.com/codingiswine/law11/actions/workflows/ci.yml/badge.svg)](https://github.com/codingiswine/law11/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
@@ -17,7 +17,7 @@ A separate case-law tool runs the same retrieval chain over its own collection (
 
 All numbers are reproducible from the eval scripts in this repo (30-case corrected golden set; RAGAS re-measured 2026-10-19, the rest 2026-09-19):
 
-> ⚠️ **Measurement snapshot** — **Retrieval recall, RAGAS and hallucination** below were measured against the law corpus **as of 2026-10-27 (1,629 articles)**. A DRF resync on 2026-11-03 brought the corpus to **1,641 articles** and changed the text of 22 articles (#63); these three metrics have not been re-measured since. Router accuracy, pytest, load test and fault injection do not depend on article content.
+> **Measurement snapshot** — Retrieval recall, RAGAS and hallucination below were **re-measured on 2026-11-04** against the resynced corpus (1,641 articles) (#71), after correcting 18 of 30 stale golden-set ground truths (#69). Router accuracy, pytest, load test and fault injection do not depend on article content.
 
 | Metric | Value |
 |---|---|
@@ -29,11 +29,11 @@ All numbers are reproducible from the eval scripts in this repo (30-case correct
 | Automated tests / CI | 92 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
 | Load test | 20 concurrent users, zero failures (2× the design target) |
 | Fault injection | 5 dependencies (PG, Qdrant, OpenAI, Tavily, Naver) killed individually — 4 defects found and fixed (#31) |
-| Documented find-fix cycles | 68 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
+| Documented find-fix cycles | 71 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
 
 ## Engineering highlights
 
-The [changelog](CHANGELOG.md) documents 68 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
+The [changelog](CHANGELOG.md) documents 71 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
 
 - **The golden dataset was lying.** Retrieval eval showed 46.7% Top-3 recall; cross-checking failures against the DB revealed the *retrieval was right and the answer key was wrong* — 13/30 golden article numbers pointed at unrelated articles (e.g., "electric shock prevention" labeled as Article 132, which is about cranes). Correcting the labels moved recall to 83.3% and RAGAS Faithfulness from 0.44 to 0.74. (#25)
 - **193 articles were silently lost to a normalization collision.** Korean laws have branch articles (제14조**의2**, "Article 14-2"); the ingest pipeline collapsed them into the same key as their base article, and the upsert's `ON CONFLICT DO UPDATE` overwrote whichever came first — entire articles (including the one defining the national disaster response HQ) vanished without any error. On the query side the same normalization turned "제14조의2" into "142", matching Article 142. Fixed the scheme end-to-end and resynced: 1,436 → 1,629 articles, RAGAS Faithfulness 0.74 → 0.86. (#28)
@@ -45,7 +45,7 @@ The [changelog](CHANGELOG.md) documents 68 find-fix cycles in "symptom → root 
 
 ## Fixes that predate the changelog
 
-The numbered changelog (#1–#68) starts at `v1.0.1` (2026-07-16), when the
+The numbered changelog (#1–#71) starts at `v1.0.1` (2026-07-16), when the
 "symptom → root cause → measured verification" format was adopted. Earlier bug fixes
 exist only as commits; a later audit (`docs/defect_audit.md`) recovered them. They are
 listed separately so the existing numbering stays stable.

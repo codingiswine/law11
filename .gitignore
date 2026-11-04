@@ -77,6 +77,8 @@ law11_backend/eval/results/*.json
 !law11_backend/eval/results/baseline_20261019_0423_full.json
 # #61 이후 베이스라인 + 그 위에서 3회 반복한 할루시네이션 판정 중 3회차 (2026-10-27)
 !law11_backend/eval/results/baseline_20261027_0705_full.json
+# #71 재측정 3회 중 대표 1회 — README 수치의 근거 (2026-11-04)
+!law11_backend/eval/results/baseline_20261104_1631_full.json
 !law11_backend/eval/results/hallucination_report.json
 
 # =========================================

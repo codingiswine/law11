@@ -429,7 +429,8 @@ def print_repeat_summary(all_metrics: List[Dict[str, float]]) -> None:
     print("  다음 변경의 유의성은 위 '범위'의 2배를 넘는지로 판단한다.\n")
 
 
-async def main(smoke: bool = False, compare_only: bool = False, repeat: int = 1):
+async def main(smoke: bool = False, compare_only: bool = False, repeat: int = 1,
+               _in_repeat: bool = False):
     run_ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # ── repeat 모드: 같은 설정을 N회 돌려 분산을 낸다 ──
@@ -438,7 +439,7 @@ async def main(smoke: bool = False, compare_only: bool = False, repeat: int = 1)
         collected: List[Dict[str, float]] = []
         for i in range(repeat):
             print(f"\n{'='*61}\n  {i+1}/{repeat} 회차\n{'='*61}")
-            await main(smoke=smoke, compare_only=False, repeat=1)
+            await main(smoke=smoke, compare_only=False, repeat=1, _in_repeat=True)
             latest = load_previous_results(exclude_path=None)
             if latest:
                 collected.append(latest["metrics"])
@@ -482,6 +483,14 @@ async def main(smoke: bool = False, compare_only: bool = False, repeat: int = 1)
     print("[Step 3] 결과 저장 중...")
     saved_path = save_result(pipeline_results, metrics, tag)
     print(f"  → {saved_path}\n")
+
+    # repeat 회차 안에서는 직전 비교를 건너뛴다 (#70).
+    # 회차끼리 비교하면 노이즈를 노이즈와 맞대는 셈이고, 직전이 smoke(5개)면
+    # 크기가 다른 집합을 비교한다. repeat의 목적은 N회를 모아 범위를 내는 것이므로
+    # 판정은 print_repeat_summary가 맡는다.
+    if _in_repeat:
+        print("[Step 4] (repeat 회차 — 직전 비교 생략)\n")
+        return
 
     # Step 4: 직전 결과와 비교
     print("[Step 4] 직전 결과와 비교...\n")

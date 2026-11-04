@@ -1,0 +1,35 @@
+# ============================================
+# Law11 Eval 전용 의존성 (#69)
+# ============================================
+# requirements.txt(운영)와 따로 둔다. RAGAS 하니스는 ragas 0.1.21 API에
+# 묶여 있고(harness.py의 Prompt.format 몽키패치가 ragas/llms/prompt.py
+# 내부 구조에 의존), 그 버전이 langchain 0.2.x 계열을 끌고 온다.
+# 운영은 langchain 0.3.27이므로 두 세트는 같은 환경에서 공존하지 않는다.
+#
+# 2026-11-04 재측정 때 이 목록이 없어 환경 복원에만 시간을 썼다.
+# ragas 버전은 harness.py 주석에만 적혀 있었고 어디에도 고정돼 있지 않았다.
+#
+# 사용:
+#   python -m venv .venv-eval && source .venv-eval/bin/activate
+#   pip install -r requirements.txt -r requirements-eval.txt
+#   # 아래 핀이 운영 핀을 덮어쓴다 (langchain 계열 다운그레이드)
+#
+# 주의: pip check는 instructor/scipy 경고를 낸다. 평가 경로는 두 패키지를
+# 타지 않으므로 무시해도 되지만, 운영 venv에 섞어 설치하지 말 것.
+
+ragas==0.1.21
+
+# ragas 0.1.21이 요구하는 계열 — 최신으로 올라가면 import가 깨진다
+#   ragas>=0.2  : ragas.llms.prompt 제거 → harness.py의 #40 패치 불가
+#   datasets>=3 : pyarrow가 numpy>=2 요구 → ragas가 고정한 numpy 1.26과 충돌
+langchain==0.2.17
+langchain-core==0.2.43
+langchain-openai==0.1.25
+langchain-community==0.2.19
+datasets==2.21.0
+pyarrow==17.0.0
+numpy==1.26.4
+
+# 생성·판정 모델 호출. 운영과 같은 메이저를 유지해야 측정 조건이 같다.
+# (ragas는 openai>=1.0.0만 요구하지만 전이 의존성이 2.x로 끌어올린다)
+openai>=1.99.9,<2.0.0
