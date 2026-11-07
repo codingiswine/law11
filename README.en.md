@@ -1,6 +1,6 @@
 # Law11 — Korean Occupational Safety Law RAG Chatbot
 
-> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (73 documented find-fix cycles, plus 7 fixes that predate the changelog — see [CHANGELOG.md](CHANGELOG.md)).
+> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (74 documented find-fix cycles, plus 7 fixes that predate the changelog — see [CHANGELOG.md](CHANGELOG.md)).
 
 [![CI](https://github.com/codingiswine/law11/actions/workflows/ci.yml/badge.svg)](https://github.com/codingiswine/law11/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
@@ -26,14 +26,14 @@ All numbers are reproducible from the eval scripts in this repo (30-case correct
 | Hallucination (golden set) | **GROUNDED 27/28 (96.4%)** · **0 HALLUCINATION** · 0 citation misses (identical across all 3 runs, #72) | The remaining PARTIAL (GS-004) is a judge false flag — the flagged content is verbatim in the provided context. A repeated flag is a signal, not proof: every flag is checked against the statute text (#71's GS-024 was a real defect, fixed in #72). 28 of the 30 golden cases are grounded in DB articles; the other 2 fall through to web search and are not scored (#61). The judge's own false flags were fixed in #46, with detection power re-verified against 4 fabricated answers. **Scoped to the 9 laws in the DB** |
 | Router accuracy | **43/43 (100%)** (keyword fast-path + LLM hybrid, incl. 11 case-law routing cases) |
 | Multi-turn regression evals | 5 scenarios, each **mutation-tested** (fix reverted → eval must fail) |
-| Automated tests / CI | 95 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
+| Automated tests / CI | 119 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
 | Load test | 20 concurrent users, zero failures (2× the design target) |
 | Fault injection | 5 dependencies (PG, Qdrant, OpenAI, Tavily, Naver) killed individually — 4 defects found and fixed (#31) |
-| Documented find-fix cycles | 73 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
+| Documented find-fix cycles | 74 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
 
 ## Engineering highlights
 
-The [changelog](CHANGELOG.md) documents 73 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
+The [changelog](CHANGELOG.md) documents 74 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
 
 - **The golden dataset was lying.** Retrieval eval showed 46.7% Top-3 recall; cross-checking failures against the DB revealed the *retrieval was right and the answer key was wrong* — 13/30 golden article numbers pointed at unrelated articles (e.g., "electric shock prevention" labeled as Article 132, which is about cranes). Correcting the labels moved recall to 83.3% and RAGAS Faithfulness from 0.44 to 0.74. (#25)
 - **193 articles were silently lost to a normalization collision.** Korean laws have branch articles (제14조**의2**, "Article 14-2"); the ingest pipeline collapsed them into the same key as their base article, and the upsert's `ON CONFLICT DO UPDATE` overwrote whichever came first — entire articles (including the one defining the national disaster response HQ) vanished without any error. On the query side the same normalization turned "제14조의2" into "142", matching Article 142. Fixed the scheme end-to-end and resynced: 1,436 → 1,629 articles, RAGAS Faithfulness 0.74 → 0.86. (#28)
@@ -45,7 +45,7 @@ The [changelog](CHANGELOG.md) documents 73 find-fix cycles in "symptom → root 
 
 ## Fixes that predate the changelog
 
-The numbered changelog (#1–#73) starts at `v1.0.1` (2026-07-16), when the
+The numbered changelog (#1–#74) starts at `v1.0.1` (2026-07-16), when the
 "symptom → root cause → measured verification" format was adopted. Earlier bug fixes
 exist only as commits; a later audit (`docs/defect_audit.md`) recovered them. They are
 listed separately so the existing numbering stays stable.
@@ -84,7 +84,7 @@ law_rag_tool retrieval order:
 
 | Command | What it measures |
 |---|---|
-| `python -m eval.harness` | RAGAS 4 metrics over the 30-case golden set, with regression compare (per-metric gates: faithfulness 15%, context precision 3%, answer relevancy / context recall 2% — each ~2× the measured noise of that metric, #59). `--repeat N` measures that configuration's noise first |
+| `python -m eval.harness` | RAGAS 4 metrics over the 30-case golden set, with regression compare (per-metric gates **derived** from measured noise, not hardcoded: answer relevancy 3.2%, context recall 2.2%, context precision 2.0% — each 2× that metric's measured noise with a 2% floor. Faithfulness is **excluded from single-run judgment**: its noise is 19.3%, so a 2× gate of 38.7% would catch nothing worth catching — `--repeat` only. A gate drifting below its metric's noise fails pytest, #74). `--repeat N` measures that configuration's noise first |
 | `python -m eval.eval_retrieval` | Retrieval Top-1/Top-3 accuracy (embedding-only, free) |
 | `python -m eval.eval_router` | Router accuracy on 43 labeled cases |
 | `python -m eval.eval_hallucination` | LLM-judge groundedness + citation verification |

@@ -74,27 +74,21 @@ RESULTS_DIR     = EVAL_DIR / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
 
 SMOKE_SIZE      = 5
-REGRESSION_THRESHOLD = 0.05   # 목록에 없는 지표의 기본값
 
-# 지표별 회귀 판정선 — 2026-10-19 실측 노이즈 기반으로 재설정했다 (#59).
-#
-# 같은 설정을 3회씩 돌려 상대 범위(최대-최소 ÷ 평균)를 쟀고, 판정선은 그 2배로 둔다.
-#   지표                v1 조건   v3 조건   최대     판정선
-#   faithfulness         2.50%    8.45%    8.45%    0.15
-#   answer_relevancy     0.80%    0.35%    0.80%    0.02
-#   context_precision    1.48%    0.34%    1.48%    0.03
-#   context_recall       0.00%    0.00%    0.00%    0.02  (0은 과민해 하한을 둔다)
-#
-# ⚠️ faithfulness만 판정선이 큰 이유: 노이즈가 조건에 따라 3.4배 달라진다.
-#    답변이 짧아지면 판정 대상 주장 수가 줄어 하나의 판정이 점수를 크게 흔든다
-#    (#58에서 답변 765자 → 386자로 줄자 노이즈가 2.50% → 8.45%로 커졌다).
-#    따라서 faithfulness는 단일 실행 비교로 판단하지 말고 --repeat 으로 분산까지 볼 것.
-METRIC_THRESHOLDS = {
-    "faithfulness":      0.15,
-    "answer_relevancy":  0.02,
-    "context_precision": 0.03,
-    "context_recall":    0.02,
-}
+# 회귀 판정선은 eval/gates.py가 실측 노이즈에서 파생한다 (#74). 여기서 떼어낸 이유는
+# 그 파일 docstring에 있다 — 요지는 ragas 없이 테스트할 수 있어야 한다는 것.
+from eval.gates import (
+    METRIC_THRESHOLDS,
+    REGRESSION_THRESHOLD,
+    SINGLE_RUN_UNRELIABLE,
+    MEASURED_NOISE,
+    MEASURED_NOISE_DATE,
+    MEASURED_NOISE_RUNS,
+    judge,
+    threshold_for,
+    gate_legend,
+    regression_summary,
+)
 
 # ────────────────────────────────────────────
 # RAGAS 설정 — 판정기는 settings.JUDGE_MODEL(기본 gpt-4o-mini)로 고정한다.
@@ -304,22 +298,6 @@ def _box_line(content: str) -> str:
     return f"│{content}{' ' * max(pad, 0)}│"
 
 
-def _delta_str(before: float, after: float, threshold: float = REGRESSION_THRESHOLD) -> Tuple[str, str]:
-    """(delta_str, icon) 반환."""
-    if before == 0:
-        return "  N/A ", "〰️"
-    delta = (after - before) / before
-    sign  = "+" if delta >= 0 else ""
-    s     = f"{sign}{delta*100:.0f}%"
-    if delta > threshold:
-        icon = "✅"
-    elif delta < -threshold:
-        icon = "❌"
-    else:
-        icon = "〰️"
-    return s, icon
-
-
 def print_comparison(
     before_data: Optional[Dict],
     after_data: Dict,
@@ -355,7 +333,7 @@ def print_comparison(
         print(_box_line(f"  {'Metric':<22} {'Before':>7}  {'After':>7}  {'Δ':>6}  "))
         print(_box_line(f"  {'─'*22}  {'─'*7}  {'─'*7}  {'─'*6}  "))
 
-        has_regression = False
+        regressed: List[str] = []
         for key in METRICS_ORDER:
             label  = METRICS_LABEL[key]
             b_val  = before_metrics.get(key)
@@ -364,9 +342,9 @@ def print_comparison(
                 line = f"  {label:<22} {'N/A':>7}  {'N/A':>7}  {'N/A':>6}  "
                 print(_box_line(line))
                 continue
-            delta_s, icon = _delta_str(b_val, a_val, METRIC_THRESHOLDS.get(key, REGRESSION_THRESHOLD))
-            if icon == "❌":
-                has_regression = True
+            delta_s, icon, is_regression = judge(key, b_val, a_val)
+            if is_regression:
+                regressed.append(key)
             line = f"  {label:<22} {b_val:>7.4f}  {a_val:>7.4f}  {delta_s:>6} {icon}"
             print(_box_line(line))
     else:
@@ -376,7 +354,7 @@ def print_comparison(
         print(_box_line(f"  {'Metric':<22} {'Score':>7}  {'Bar':<20}"))
         print(_box_line(f"  {'─'*22}  {'─'*7}  {'─'*20}"))
 
-        has_regression = False
+        regressed = []
         for key in METRICS_ORDER:
             label = METRICS_LABEL[key]
             val   = after_metrics.get(key)
@@ -389,14 +367,19 @@ def print_comparison(
 
     print(sep_bottom)
 
+    # 판정선을 값에서 만들어 같이 찍는다 — 표의 ✅/❌/— 가 어느 기준으로 붙었는지
+    # 로그만 보고 알 수 있어야 한다. 과거엔 종합 판정이 "5% 이상 하락"으로
+    # 하드코딩돼 있었는데, 4개 지표 전부 판정선이 따로 있어서 5%는 어떤 지표에도
+    # 적용되지 않는 숫자였다 (#74).
+    print(f"\n  {gate_legend()}")
+    print(f"  (실측 노이즈 {MEASURED_NOISE_DATE} · 같은 설정 {MEASURED_NOISE_RUNS}회 범위의 2배, 하한 2%)")
+
     # 종합 판정
     if before_data:
-        if has_regression:
-            print("\n  ❌ REGRESSION 감지 — 5% 이상 하락한 메트릭이 있습니다.")
-        else:
-            print("\n  ✅ 회귀 없음 — 모든 메트릭이 안정적입니다.")
+        print()
+        print(regression_summary(regressed))
     print()
-    return has_regression if before_data else False
+    return bool(regressed) if before_data else False
 
 
 # ────────────────────────────────────────────
@@ -422,11 +405,19 @@ def print_repeat_summary(all_metrics: List[Dict[str, float]]) -> None:
         mean = sum(vals) / len(vals)
         rng  = max(vals) - min(vals)
         rel  = (rng / mean * 100) if mean else 0.0
-        gate = METRIC_THRESHOLDS.get(k, REGRESSION_THRESHOLD) * 100
-        warn = "  ⚠️ 판정선 초과" if rel > gate else ""
+        if k in SINGLE_RUN_UNRELIABLE:
+            # 노이즈가 판정 가능 범위를 넘어 단일 실행 판정에서 빠진 지표. 여기서는
+            # 범위 자체가 결과물이므로 경고가 아니라 상태를 적는다.
+            warn = "  (단일 실행 판정 제외)"
+        else:
+            gate = threshold_for(k) * 100
+            warn = "  ⚠️ 판정선 초과" if rel > gate else ""
         print(f"  {k:<20}{mean:>9.4f}{min(vals):>9.4f}{max(vals):>9.4f}{rng:>9.4f}{rel:>7.2f}%{warn}")
     print(f"{'─'*61}")
-    print("  다음 변경의 유의성은 위 '범위'의 2배를 넘는지로 판단한다.\n")
+    print(f"  {gate_legend()}")
+    print("  다음 변경의 유의성은 위 '범위'의 2배를 넘는지로 판단한다.")
+    print(f"  이 표의 '상대'가 gates.py의 MEASURED_NOISE({MEASURED_NOISE_DATE})와 크게 다르면")
+    print("  그 상수를 갱신해야 한다 — 판정선이 거기서 파생되므로 함께 따라온다 (#74).\n")
 
 
 async def main(smoke: bool = False, compare_only: bool = False, repeat: int = 1,

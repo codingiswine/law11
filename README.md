@@ -11,7 +11,7 @@
 [![Version](https://img.shields.io/badge/Version-1.13.1-orange.svg)]()
 
 > **이 저장소가 보여주는 것**
-> 1. 측정하고 고친 기록 — changelog 80건, 전부 실측 검증 포함
+> 1. 측정하고 고친 기록 — changelog 81건, 전부 실측 검증 포함
 > 2. 검증 체계를 직접 만든 것 — 골든셋 30문항, 회귀 하니스, 장애 주입 5종, mutation test
 > 3. 표준을 실측으로 기각한 것 — Cross-Encoder Reranking 제거 (Top-1 13.3% → 66.7%)
 
@@ -77,11 +77,11 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 할루시네이션 | GROUNDED **27/28 (96.4%, 3회 동일)** · **HALLUCINATION 0건** · Citation 누락 0건 | #71에서 찾은 회귀(GS-024)를 #72에서 수정한 뒤의 값. 남은 1건(GS-004)은 지적 내용이 제공 context에 그대로 있는 것을 확인한 **판정기 거짓 지적**이다. 골든셋 30 중 조문 근거 28건(웹 폴백 2건은 채점 대상 제외, #61), DB 수록 9개 법령 범위 내 ³ |
 | 라우터 정확도 | **43/43 (100%)** | 키워드 fast-path + LLM 하이브리드, 판례 케이스 11개 포함 ⁴ |
 | 멀티턴 회귀 eval | 시나리오 5개 | 전부 mutation test(fix 되돌리기)로 회귀 감지력 검증 |
-| 자동화 테스트 / CI | pytest 95개 | GitHub Actions — 백엔드 pytest · 프론트 typecheck/build |
+| 자동화 테스트 / CI | pytest 119개 | GitHub Actions — 백엔드 pytest · 프론트 typecheck/build |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 | 설계 목표 10명의 2배 |
 | 응답 시간 구간 분해 | 전체 p95 18.57초 중 **병목은 웹 폴백 경로(p95 20.02초)** | 20명×3라운드 60건, 경로별 분해 ⁶ |
 | 장애 주입 테스트 | 결함 4건 발견·수정 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 ⁵ |
-| 문서화된 발견-수정 사이클 | changelog 73건 + 체계 도입 이전 7건 | 증상 → 근본 원인 → 실측 검증 형식, [CHANGELOG.md](CHANGELOG.md) |
+| 문서화된 발견-수정 사이클 | changelog 74건 + 체계 도입 이전 7건 | 증상 → 근본 원인 → 실측 검증 형식, [CHANGELOG.md](CHANGELOG.md) |
 
 ¹ 복수 인정 조문 정책(#30)과 법령 용어 매핑(#33) 적용 후 값. **`eval_retrieval.py`는 Qdrant 벡터 검색만 측정하며 3단 계층을 타지 않는다** — 운영은 PG 정확매칭이 먼저다. 2026-11-04 신규 실패 GS-020(`제500조 내용은?`)은 운영 경로에서 `source: pg`로 정상 처리되므로 운영 기준 신규 실패는 0건이다(#71).
 ² 2026-10-19 실측(#57~#59). 그 전까지 평가 하니스는 운영과 **다른 프롬프트·온도**로 답변을 만들어 채점하고 있었다 — RAGAS 수치가 실제 서비스 품질을 대변하지 못했다는 뜻이다. #57에서 운영 프롬프트·온도로 통일하고 판정기를 생성기와 분리한 뒤, 같은 조건 3회씩 돌려 노이즈부터 측정했다. 괄호 안은 상대 범위(최대−최소 ÷ 평균).
@@ -235,7 +235,7 @@ RAGAS 기반 오프라인 평가 + 라우터·검색·할루시네이션·멀티
 
 - **골든셋 30케이스** (`eval/golden_dataset.json`, 13건 오염 교정 후 — #25): 개념형 13 · 기준/설치 10 · 직접 조문 4 · 처벌 3
 - **메트릭**: RAGAS 4종 — Faithfulness · Answer Relevancy · Context Precision · Context Recall (판정기 `JUDGE_MODEL`=`gpt-4o-mini`, 생성기 `LLM_MODEL`과 분리 — #57, ragas 0.1.21) + 검색 Top-k · 라우터 정확도 · 할루시네이션/Citation · 멀티턴 시나리오 5개(mutation test 검증)
-- **회귀 판정** (`python -m eval.harness --compare`): 직전 baseline 대비 **지표별** 판정선 이상 하락 시 exit 1 — faithfulness 15% · context precision 3% · answer relevancy 2% · context recall 2%. 각 값은 같은 조건 3회 실측 노이즈의 약 2배다 (`eval/harness.py:91`, 산출 근거 #59)
+- **회귀 판정** (`python -m eval.harness --compare`): 직전 baseline 대비 **지표별** 판정선 이상 하락 시 exit 1 — answer relevancy 3.2% · context recall 2.2% · context precision 2.0%. 판정선은 상수가 아니라 같은 조건 3회 실측 노이즈의 2배로 **파생**되며(하한 2%), 노이즈 상수를 갱신하면 함께 따라온다. faithfulness는 노이즈가 19.3%(2026-11-04 실측)라 2배가 38.7%가 되어 탐지력이 없으므로 **단일 실행 판정에서 제외**하고 `--repeat`으로만 본다. 판정선이 노이즈 아래로 내려가면 pytest가 막는다 (`eval/gates.py`, `tests/test_eval_gates.py`, 산출 근거 #74)
 - **노이즈 먼저 측정** (`--repeat N`): 같은 설정을 N회 돌려 평균·최소·최대·상대범위를 출력한다. 조건이 바뀌면 노이즈도 바뀌므로(v1 2.50% ↔ v3 8.45%) 변경 전후를 비교하기 전에 먼저 실행한다 (#59)
 
 대표 수치 (검색 · RAGAS · 할루시네이션은 2026-11-04 재동기화 코퍼스 재측정 — #71·#72, 나머지는 2026-09-19 재검증):
@@ -249,7 +249,7 @@ RAGAS 기반 오프라인 평가 + 라우터·검색·할루시네이션·멀티
 | 멀티턴 회귀 | 5/5 |
 | 부하 (2026-07-15) | 20명 동시 무실패, Total p50 11.2s |
 
-2026-09-19 재검증: pytest 68 · 라우터 43/43 · Top-3 recall 96.7% · 할루시네이션 0/30 · 멀티턴 5/5 · RAGAS 회귀 없음 — 전 항목 일치. (이후 #51에서 버전 동기화 2개, #56에서 구간 계측 2개, #60에서 changelog 건수 대조 1개, #61에서 검색 계층 판단 11개가 추가되어 84개, 이후 #63~#72에서 11개가 더 추가되어 현재 95개)
+2026-09-19 재검증: pytest 68 · 라우터 43/43 · Top-3 recall 96.7% · 할루시네이션 0/30 · 멀티턴 5/5 · RAGAS 회귀 없음 — 전 항목 일치. (이후 #51에서 버전 동기화 2개, #56에서 구간 계측 2개, #60에서 changelog 건수 대조 1개, #61에서 검색 계층 판단 11개가 추가되어 84개, 이후 #63~#72에서 11개가 더 추가되어 95개, #74에서 판정선 가드 24개가 더 추가되어 현재 119개)
 
 ```bash
 docker compose exec fastapi pip install -r eval/requirements-eval.txt   # ragas는 컨테이너 안에만
@@ -261,7 +261,7 @@ docker compose exec fastapi python -m eval.eval_retrieval               # 검색
 
 ## 발견·수정 이력
 
-증상 → 근본 원인 → 실측 검증 형식으로 80건을 기록했습니다.
+증상 → 근본 원인 → 실측 검증 형식으로 81건을 기록했습니다.
 전체 목록: [CHANGELOG.md](CHANGELOG.md)
 
 대표 사례:

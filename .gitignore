@@ -79,7 +79,10 @@ law11_backend/eval/results/*.json
 !law11_backend/eval/results/baseline_20261027_0705_full.json
 # #71 재측정 3회 중 대표 1회 — README 수치의 근거 (2026-11-04)
 !law11_backend/eval/results/baseline_20261104_1631_full.json
-# #72 수정 후 3회 중 대표 1회 — README 수치의 근거 (2026-11-04)
+# #72 수정 후 3회 전부 — MEASURED_NOISE(#74)의 근거이므로 셋이 다 있어야 재계산된다.
+# tests/test_eval_gates.py 가 이 셋에서 노이즈를 다시 계산해 gates.py 상수와 대조한다.
+!law11_backend/eval/results/baseline_20261104_1747_full.json
+!law11_backend/eval/results/baseline_20261104_1801_full.json
 !law11_backend/eval/results/baseline_20261104_1821_full.json
 !law11_backend/eval/results/hallucination_report.json
 
@@ -95,6 +98,7 @@ docs/superpowers/
 
 # 로컬 잔여물
 .venv-old-py3122-backup/
+.venv-eval-backup/
 docs/.DS_Store
 
 # 면접 준비 문서 (공개 저장소에 올리지 않음)
