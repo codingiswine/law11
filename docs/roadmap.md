@@ -14,17 +14,23 @@
 
 | 항목 | 값 | 확인 방법 |
 |---|---|---|
-| 법령 조문 | 1,629건 / 9개 법령 | `law_chunks` (PG ↔ Qdrant 건수 일치 확인됨) |
+| 법령 조문 | 1,641건 / 9개 법령 | `law_chunks` (PG ↔ Qdrant 건수 일치 확인됨) |
 | 판례 | 52건 / 6개 법령 (대법원) | `case_law_chunks` |
 | Tool | 7개 | `routes.py` `tool_map` |
-| pytest | 68개 | `python -m pytest -q` |
-| changelog | 48건 (+ 도입 이전 7건) | README |
-| Top-3 검색 재현율 | 96.7% | `python -m eval.eval_retrieval` (LLM 비용 없음) |
-| RAGAS (F / AR / CP / CR) | 0.74 / 0.57 / 1.00 / 0.92 | `python -m eval.harness` |
-| 할루시네이션 | 명백한 날조 0/30, GROUNDED 28/30 | `python -m eval.eval_hallucination` |
+| pytest | 121개 | `python -m pytest -q` |
+| changelog | 76건 (+ 도입 이전 7건) | README |
+| Top-3 검색 재현율 | 93.3% (Top-1 70.0%, Top-5·10 100%) | `python -m eval.eval_retrieval` (LLM 비용 없음) |
+| RAGAS (F / AR / CP / CR) | 0.669~0.814 / 0.606~0.616 / 0.993~0.996 / 0.918~0.929 | `python -m eval.harness` (같은 조건 3회 범위) |
+| 할루시네이션 | HALLUCINATION 0건, GROUNDED 27/28 (3회 동일) | `python -m eval.eval_hallucination` |
 | 라우터 정확도 | 43/43 | `python -m eval.eval_router` |
 | 배포 | **없음** (EC2 삭제함) | — |
 | 실사용자 | **0명** | — |
+
+> **2026-11-10 갱신(#76)** — 위 표는 2026-09-07(`v1.9.4`) 값으로 두 달간 방치돼 있었다.
+> 특히 `GROUNDED 28/30`은 실제 `27/28`이고(웹 폴백 2건은 채점 제외 — #61, 남은 1건은
+> 판정기 거짓 지적 — #72), 이 낡은 수치가 외부 문서로 번진 사례가 있다.
+> Top-3는 법제처 재동기화 전 96.7% → 재측정 93.3%(#71). faithfulness는 실측 노이즈가
+> 19.3%라 단일 실행 비교가 무의미하므로 범위로 적는다(#72·#74).
 
 **환경 주의사항**
 
@@ -78,7 +84,12 @@ baseline 수치가 흔들리면 "문서에 적힌 숫자 ≠ 지금 돌리면 �
 
 ## 3. 백로그 — 우선순위순
 
-### 🔴 P1. eval 생성 단계를 프로덕션과 정렬
+### ✅ P1. eval 생성 단계를 프로덕션과 정렬 — **완료 (#57 · #61)**
+
+> #57에서 판정기를 생성기와 분리하고 프롬프트·temperature를 운영과 맞췄고,
+> #61에서 검색 경로까지 공용 함수 하나로 통합했다. 예고했던 대가도 실제로 치렀다 —
+> 과거 baseline이 무효가 돼 재수립했고, faithfulness는 노이즈가 19.3%로 드러나
+> 단일 실행 판정에서 제외됐다(#72 · #74). 아래 원문은 기록으로 남긴다.
 
 **문제**: `eval/retriever.py`의 `_generate()`가 프로덕션 `law_rag_tool`과 **다른 간소
 프롬프트**를 쓴다. 검색 경로는 프로덕션과 맞춰놨지만(v1.6.1) 생성은 안 맞다. 즉 지금의
@@ -162,7 +173,10 @@ law11 자신의 요청 로그에서 나온 수치다.**
 
 ---
 
-### 🟡 P4. 세션 소유권 검사 + rate limiting (보안 M1·M2)
+### 🟡 P4. 세션 소유권 검사 + rate limiting (보안 M1·M2) — **rate limiting 완료 (#65)**
+
+> `/api/ask`에 IP 단위 레이트리밋이 붙었다(`@limiter.limit(_settings.RATE_LIMIT_ASK)`).
+> 세션 소유권 검사는 여전히 열려 있고, 아래 적은 대로 신원 모델이 선행 조건이다.
 
 - `GET/DELETE /api/session/{id}`에 소유자 확인 없음 — session_id가 UUID4라 열거는
   불가하지만, 유출되면 열람·삭제 가능
@@ -184,9 +198,10 @@ law11 자신의 요청 로그에서 나온 수치다.**
 
 ### 🟢 P6. 문서·잔여물 정리
 
-- **`docs/defect_audit.md`가 git 미추적** — README가 이 파일을 링크하는데 저장소엔 없다.
-  커밋하거나 링크를 걷어낼 것 (**이건 지금 당장 고쳐도 무해함**)
-- `README.en.md` 산문 동기화 — 수치는 맞췄지만 본문 하이라이트는 아직 7월 기준
+- ~~**`docs/defect_audit.md`가 git 미추적**~~ — **완료.** 현재 추적됨
+- `README.en.md` 산문 동기화 — 수치는 맞췄지만 본문 하이라이트는 아직 7월 기준.
+  #75에서 #25 서술이 한글판과 **반대**였던 것을 고치고 대조 테스트를 붙였으나,
+  그 가드는 #25 한 줄만 본다. 나머지 하이라이트는 여전히 사람이 읽어야 한다
 - `law_chunks.paragraph_number` / `sub_paragraph_number` 죽은 컬럼(1,629행 전부 NULL,
   코드 참조 0건) — 제거할지 채울지 결정
 - `.venv-old-py3122-backup/` **1.3GB** 디스크 점유 — 새 venv 정상 동작 확인됐으니 삭제 가능

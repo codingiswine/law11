@@ -107,7 +107,9 @@ JUDGE_MODEL = os.getenv("JUDGE_MODEL", "gpt-4o-mini")
 # ─────────────────────────────
 # /health 가 반환하던 FastAPI(version=...)가 0.8.2에 멈춰 README 배지(1.9.x)와
 # 따로 놀았다. 여기서만 올리고, README 배지와의 일치는 tests/test_version.py 가 지킨다.
-APP_VERSION = "1.13.1"
+# 셋이 **나란히** 낡으면 그 대조로는 안 잡히므로(#76), 같은 테스트가 CHANGELOG
+# 최신 항목의 버전 태그와도 대조한다 — 항목을 추가할 때 이 값을 함께 올릴 것.
+APP_VERSION = "1.16.4"
 
 # ─────────────────────────────
 # 🔐 관리자 엔드포인트 인증
