@@ -131,6 +131,9 @@ python -m eval.eval_retrieval
 # 할루시네이션 검사
 python -m eval.eval_hallucination
 
+# 항목별 rubric 채점 (질문 유형별 항목 충족도 — 저장된 baseline 답변으로 채점)
+python -m eval.eval_rubric --repeat 3
+
 # 멀티턴 회귀 (백엔드가 localhost:8000에 떠 있어야 함, 로컬 실행 시 docker 백엔드 컨테이너 중지 확인)
 python -m eval.eval_multiturn
 ```

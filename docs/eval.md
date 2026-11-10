@@ -94,6 +94,9 @@ docker compose exec fastapi python -m eval.eval_hallucination
 # 판정기 흔들림 — 같은 입력 3회, 케이스별 이력 (LLM 호출도 3배, #77)
 docker compose exec fastapi python -m eval.eval_hallucination --repeat 3
 
+# 항목별 rubric 채점 — 어느 항목이 깎였는지 (#80)
+docker compose exec fastapi python -m eval.eval_rubric --repeat 3
+
 # 음성 대조군 — 조작 답변 4종이 전부 HALLUCINATION으로 잡히는지 (#46·#78)
 docker compose exec fastapi python -m eval.eval_hallucination \
   --result eval/judge_negative_controls.json --repeat 3
