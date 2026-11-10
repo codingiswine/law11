@@ -17,7 +17,7 @@
 | 법령 조문 | 1,641건 / 9개 법령 | `law_chunks` (PG ↔ Qdrant 건수 일치 확인됨) |
 | 판례 | 52건 / 6개 법령 (대법원) | `case_law_chunks` |
 | Tool | 7개 | `routes.py` `tool_map` |
-| pytest | 121개 | `python -m pytest -q` |
+| pytest | 124개 | `python -m pytest -q` |
 | changelog | 76건 (+ 도입 이전 7건) | README |
 | Top-3 검색 재현율 | 93.3% (Top-1 70.0%, Top-5·10 100%) | `python -m eval.eval_retrieval` (LLM 비용 없음) |
 | RAGAS (F / AR / CP / CR) | 0.669~0.814 / 0.606~0.616 / 0.993~0.996 / 0.918~0.929 | `python -m eval.harness` (같은 조건 3회 범위) |

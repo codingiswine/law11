@@ -90,7 +90,14 @@ docker compose exec fastapi python -m eval.eval_retrieval
 
 # 할루시네이션 + Citation 검증
 docker compose exec fastapi python -m eval.eval_hallucination
+
+# 판정기 흔들림 — 같은 입력 3회, 케이스별 이력 (LLM 호출도 3배, #77)
+docker compose exec fastapi python -m eval.eval_hallucination --repeat 3
 ```
+
+`--repeat N`은 '율'이 아니라 **케이스별 이력**을 낸다. 매회 GROUNDED가 아닌 케이스(`always_flagged` — 조문 원문과 대조할 대상)와 회차마다 판정이 달라진 케이스(`flipped` — temperature 0에서도 뒤집히므로 판정기 불안정의 직접 증거)를 따로 적는다. 반복성은 신호이지 증거가 아니다 — #72에서 GS-024는 3/3 반복된 실제 결함이었고 GS-004는 3/3 반복된 오탐이었다. 결과는 `eval/results/hallucination_repeat.json`에 남는다.
+
+`harness.py`는 `baseline_*.json`의 `per_case_results[i]["ragas_scores"]`에 케이스별 RAGAS 점수를 함께 저장한다 (#77). 집계가 움직였을 때 어느 케이스가 움직였는지 보는 용도다. 판정이 실패한 지표는 키가 비어 있다 — `0.0`과 '측정 실패'를 구분하기 위해서다.
 
 ### 부하 테스트 (2026-07-15)
 

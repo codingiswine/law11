@@ -16,6 +16,7 @@ GPT 답변이 검색된 조문(context)에 근거하는지 LLM-judge 방식으�
     python -m eval.eval_hallucination                       # 최신 run_eval 결과 사용
     python -m eval.eval_hallucination --result <path.json>  # 특정 결과 파일 지정
     python -m eval.eval_hallucination --sample 5            # 빠른 테스트
+    python -m eval.eval_hallucination --repeat 3            # 같은 입력 3회 — 판정 흔들림 확인
 """
 
 import re
@@ -23,6 +24,7 @@ import sys
 import asyncio
 import argparse
 import json
+from collections import Counter
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -163,6 +165,82 @@ def load_latest_result() -> Optional[Dict]:
         return json.load(f)
 
 
+def summarize_repeat(runs: List[List[Dict[str, Any]]]) -> Dict[str, Any]:
+    """같은 입력 N회 판정 결과 → 케이스별 판정 이력 (#62·#71의 남은 과제).
+
+    #72에서 배운 것: **"3회 모두 걸렸다"는 신호이지 증거가 아니다.** GS-024는
+    3/3 반복됐고 실제 결함이었지만, GS-004도 3/3 반복됐고 조문 원문과 대조하니
+    오탐이었다. 그래서 반복 집계의 산출물은 '율'이 아니라 케이스별 이력이다 —
+    매회 지적되는 케이스(조문 대조 대상)와 회차마다 뒤집히는 케이스(판정기 자체의
+    불안정)를 구분하는 것이 목적이다. temperature=0이어도 뒤집힌다.
+    """
+    if not runs:
+        raise ValueError("회차 결과가 없다")
+
+    by_run = [{d["id"]: d["verdict"] for d in r} for r in runs]
+    if any(set(b) != set(by_run[0]) for b in by_run[1:]):
+        raise ValueError("회차마다 케이스 집합이 다르다 — 같은 입력으로 반복해야 비교가 성립한다")
+
+    ids = [d["id"] for d in runs[0]]
+    per_case = {i: [b[i] for b in by_run] for i in ids}
+    return {
+        "runs":           len(runs),
+        "verdict_counts": [dict(Counter(b.values())) for b in by_run],
+        "per_case":       per_case,
+        # 매회 GROUNDED가 아닌 케이스 — 조문 원문과 대조할 대상
+        "always_flagged": [i for i, vs in per_case.items() if all(v != "GROUNDED" for v in vs)],
+        # 회차마다 판정이 달라진 케이스 — 판정기 불안정의 직접 증거
+        "flipped":        [i for i, vs in per_case.items() if len(set(vs)) > 1],
+    }
+
+
+def print_repeat_summary(summary: Dict[str, Any]) -> None:
+    icons = {"GROUNDED": "✅", "PARTIAL": "⚠️", "HALLUCINATION": "❌", "ERROR": "💥"}
+    n = summary["runs"]
+    print(f"\n{'─'*65}")
+    print(f"  반복 판정 요약 — 같은 입력 {n}회  (판정 {settings.LLM_MODEL}, temperature 0)")
+    print(f"{'─'*65}")
+    for i, counts in enumerate(summary["verdict_counts"]):
+        print(f"  {i+1}회차: " + " · ".join(f"{k} {v}" for k, v in sorted(counts.items())))
+
+    flagged, flipped = summary["always_flagged"], summary["flipped"]
+    watch = [i for i in summary["per_case"] if i in set(flagged) | set(flipped)]
+    print()
+    if not summary["per_case"]:
+        print("  판정한 케이스가 없다 — 입력 결과 파일을 확인하라.")
+    elif not watch:
+        print(f"  {n}회 모두 전 케이스 GROUNDED — 판정 흔들림 없음.")
+    for i in watch:
+        marks = "".join(icons.get(v, "?") for v in summary["per_case"][i])
+        state = "매회 지적 — 조문 대조 대상" if i in flagged else "회차마다 뒤집힘 — 판정기 불안정"
+        print(f"  {i:<10}{marks:<{n*3}}{state}")
+    print()
+    print("  매회 지적된 케이스도 신호일 뿐이다 — 반복성은 증거가 아니므로 조문 원문과")
+    print("  대조해 판정한다. #72의 GS-004가 3/3 반복된 오탐이었다.")
+    print(f"{'─'*65}\n")
+
+
+async def run_repeat(repeat: int, result_path: Optional[str] = None,
+                     sample: Optional[int] = None) -> Dict[str, Any]:
+    runs = []
+    for i in range(repeat):
+        print(f"\n{'='*65}\n  {i+1}/{repeat} 회차\n{'='*65}")
+        out = await run(result_path=result_path, sample=sample)
+        if not out:
+            raise RuntimeError("회차 실행이 결과를 내지 못했다 — 입력 결과 파일을 확인하라")
+        runs.append(out["details"])
+
+    summary = summarize_repeat(runs)
+    print_repeat_summary(summary)
+
+    out_path = RESULTS_DIR / "hallucination_repeat.json"
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump({"generated_at": datetime.now().isoformat(timespec="seconds"),
+                   "judge_model": settings.LLM_MODEL, **summary}, f, ensure_ascii=False, indent=2)
+    print(f"  저장 완료 → {out_path}\n")
+    return summary
+
+
 async def run(result_path: Optional[str] = None, sample: Optional[int] = None):
     print(f"\n{'='*65}")
     print(f"  할루시네이션 검사 — LLM Judge")
@@ -273,11 +351,19 @@ async def run(result_path: Optional[str] = None, sample: Optional[int] = None):
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
     print(f"  저장 완료 → {out_path}\n")
+    return output
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--result", type=str, default=None)
     parser.add_argument("--sample", type=int, default=None)
+    parser.add_argument(
+        "--repeat", type=int, default=1,
+        help="같은 입력을 N회 판정해 케이스별 흔들림을 본다 (LLM 호출도 N배)",
+    )
     args = parser.parse_args()
-    asyncio.run(run(result_path=args.result, sample=args.sample))
+    if args.repeat > 1:
+        asyncio.run(run_repeat(args.repeat, result_path=args.result, sample=args.sample))
+    else:
+        asyncio.run(run(result_path=args.result, sample=args.sample))

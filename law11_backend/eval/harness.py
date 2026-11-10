@@ -218,7 +218,30 @@ def compute_ragas(pipeline_results: List[Dict]) -> Dict[str, float]:
         metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
         run_config=RunConfig(max_workers=1, timeout=300),
     )
-    return score.to_pandas().mean(numeric_only=True).to_dict()
+    df = score.to_pandas()
+
+    # 케이스별 점수를 per_case_results에 붙인다 (#71). 집계만 저장하던 동안
+    # GS-024 회귀에서 "어느 케이스가 떨어졌는가"를 추적할 수 없었다. 이미 계산된
+    # 값이라 저장에 추가 LLM 호출이 없다. valid는 pipeline_results의 같은 dict
+    # 객체들이므로 여기서 붙이면 save_result가 그대로 기록한다.
+    rows = df.to_dict("records")
+    if len(rows) != len(valid):
+        raise ValueError(
+            f"RAGAS 결과 {len(rows)}행 ≠ 입력 {len(valid)}건 — 케이스별 점수를 붙일 수 없다"
+        )
+    for case, row in zip(valid, rows):
+        # 행 순서가 입력과 같다는 전제(ragas 0.1.21)를 가정으로 두지 않고 대조한다.
+        # 어긋난 채 붙이면 엉뚱한 케이스를 추적하게 되므로 조용히 넘기면 안 된다.
+        if row.get("question") != case["question"]:
+            raise ValueError("RAGAS 결과 행 순서가 입력과 다르다 — 케이스별 점수를 붙일 수 없다")
+        case["ragas_scores"] = {
+            k: round(float(row[k]), 4)
+            for k in METRICS_ORDER
+            # NaN은 그 지표의 판정이 실패했다는 뜻이고 집계(mean)에서도 빠진다.
+            # 0.0으로 저장하면 '낮은 점수'로 오독되므로 키 자체를 비워 둔다.
+            if k in row and float(row[k]) == float(row[k])
+        }
+    return df.mean(numeric_only=True).to_dict()
 
 
 # ────────────────────────────────────────────
