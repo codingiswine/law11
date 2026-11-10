@@ -21,7 +21,10 @@ from qdrant_client.http.models import FieldCondition, MatchValue, Filter
 from core.stream import ToolChunk
 from app.tools.websearch_tool import summarize_web
 from app.services.embedding_cache import get_embedding_async
-from app.tools.law_rag_tool import detect_law_name, get_priority_law, expand_legal_terms
+from app.tools.law_rag_tool import (
+    detect_law_name, get_priority_law, expand_legal_terms,
+    is_out_of_domain, OUT_OF_SCOPE_MESSAGE,
+)
 try:
     from app.config import settings   # ✅ Docker 실행 시
 except ModuleNotFoundError:
@@ -257,6 +260,20 @@ async def run(plan):
     # ④ Web fallback (판례 없음)
     if not text_val or not isinstance(text_val, str) or not text_val.strip():
         yield ToolChunk(type="status", payload="⚠️ 관련 판례 없음 → Web 검색으로 보완")
+        # 유료 경로 직전 스코프 경계 게이트 (P3) — law_rag_tool과 같은 판정을 쓴다.
+        # 판례 경로도 웹 폴백 비중이 높다(운영 로그 65건 중 60건).
+        if is_out_of_domain(query):
+            yield ToolChunk(type="meta", payload={
+                "query_type": "direct_case" if is_direct_case_query else "semantic",
+                "selected_source": "out_of_scope",
+                "selected_articles": [],
+                "fallback_used": False,
+                "confidence_score": None,
+                "tool": "case_law_rag_tool",
+            })
+            yield ToolChunk(type="text", payload=OUT_OF_SCOPE_MESSAGE)
+            yield ToolChunk(type="status", payload="⛔ 범위 밖 질문 — 웹 검색 생략")
+            return
         web_result = await summarize_web(f"{query} 판례", context=context)
         # ⚠️ 검색 결과가 하나도 없으면 GPT 생성 자체를 중단한다. law_rag_tool.py와
         # 동일한 anti-hallucination 게이트 (README #31 교훈) — 완화하지 않음.

@@ -21,7 +21,7 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 def log_request(
     query: str,
     query_type: str,            # "direct_article" | "semantic" | "web_fallback"
-    selected_source: str,       # "pg" | "qdrant" | "web" | "none"
+    selected_source: str,       # "pg" | "qdrant" | "web" | "out_of_scope" | "none"
     selected_articles: List[str],
     fallback_used: bool,
     confidence_score: Optional[float] = None,

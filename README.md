@@ -8,10 +8,10 @@
 [![React](https://img.shields.io/badge/React-19-61DAFB.svg)](https://reactjs.org/)
 [![Qdrant](https://img.shields.io/badge/Qdrant-VectorDB-red.svg)](https://qdrant.tech/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-1.17.0-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.17.1-orange.svg)]()
 
 > **이 저장소가 보여주는 것**
-> 1. 측정하고 고친 기록 — changelog 85건, 전부 실측 검증 포함
+> 1. 측정하고 고친 기록 — changelog 86건, 전부 실측 검증 포함
 > 2. 검증 체계를 직접 만든 것 — 골든셋 30문항, 회귀 하니스, 장애 주입 5종, mutation test
 > 3. 표준을 실측으로 기각한 것 — Cross-Encoder Reranking 제거 (Top-1 13.3% → 66.7%)
 
@@ -77,11 +77,11 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 | 할루시네이션 | 조문 대조 후 GROUNDED **27~28/28** · **HALLUCINATION 0건** (판정기 원본 26/28, 3회 동일) | 판정기가 매회 지적한 2건(GS-004·GS-016)은 지적 문장이 제공 조문의 **복사**임을 기계 대조로 확인해 기각한 값이다(#78). 조작 답변 4종 음성 대조군은 3회 모두 4/4 HALLUCINATION으로 탐지된다. 골든셋 30 중 조문 근거 28건(웹 폴백 2건은 채점 대상 제외, #61), DB 수록 9개 법령 범위 내 ³ |
 | 라우터 정확도 | **43/43 (100%)** | 키워드 fast-path + LLM 하이브리드, 판례 케이스 11개 포함 ⁴ |
 | 멀티턴 회귀 eval | 시나리오 5개 | 전부 mutation test(fix 되돌리기)로 회귀 감지력 검증 |
-| 자동화 테스트 / CI | pytest 138개 | GitHub Actions — 백엔드 pytest · 프론트 typecheck/build |
+| 자동화 테스트 / CI | pytest 185개 | GitHub Actions — 백엔드 pytest · 프론트 typecheck/build |
 | 동시 접속 부하테스트 | 20명 동시 요청 무실패 | 설계 목표 10명의 2배 |
 | 응답 시간 구간 분해 | 전체 p95 18.57초 중 **병목은 웹 폴백 경로(p95 20.02초)** | 20명×3라운드 60건, 경로별 분해 ⁶ |
 | 장애 주입 테스트 | 결함 4건 발견·수정 | 의존성 5종(PG·Qdrant·OpenAI·Tavily·Naver) 개별 장애 주입 ⁵ |
-| 문서화된 발견-수정 사이클 | changelog 78건 + 체계 도입 이전 7건 | 증상 → 근본 원인 → 실측 검증 형식, [CHANGELOG.md](CHANGELOG.md) |
+| 문서화된 발견-수정 사이클 | changelog 79건 + 체계 도입 이전 7건 | 증상 → 근본 원인 → 실측 검증 형식, [CHANGELOG.md](CHANGELOG.md) |
 
 ¹ 복수 인정 조문 정책(#30)과 법령 용어 매핑(#33) 적용 후 값. **`eval_retrieval.py`는 Qdrant 벡터 검색만 측정하며 3단 계층을 타지 않는다** — 운영은 PG 정확매칭이 먼저다. 2026-11-04 신규 실패 GS-020(`제500조 내용은?`)은 운영 경로에서 `source: pg`로 정상 처리되므로 운영 기준 신규 실패는 0건이다(#71).
 ² 2026-10-19 실측(#57~#59). 그 전까지 평가 하니스는 운영과 **다른 프롬프트·온도**로 답변을 만들어 채점하고 있었다 — RAGAS 수치가 실제 서비스 품질을 대변하지 못했다는 뜻이다. #57에서 운영 프롬프트·온도로 통일하고 판정기를 생성기와 분리한 뒤, 같은 조건 3회씩 돌려 노이즈부터 측정했다. 괄호 안은 상대 범위(최대−최소 ÷ 평균).
@@ -122,7 +122,8 @@ Law11은 이 도메인에 특화된 RAG 시스템으로, **정확한 조문 번�
 ```
 질문 → question_router (키워드 fast-path → 애매하면 LLM 분류, DB 세션 컨텍스트 연동) → ToolPlan
      → tool_map: law_rag · case_law_rag · news · blog · websearch · db_query · general
-     → law_rag_tool: ① PG 정확 매칭 → ② Qdrant 의미 검색 (top-10, threshold 0.45/0.5) → ③ 웹 폴백
+     → law_rag_tool: ① PG 정확 매칭 → ② Qdrant 의미 검색 (top-10, threshold 0.45/0.5)
+                      → ③ 스코프 경계 게이트(법령 질문이 아니면 여기서 중단, #79) → ④ 웹 폴백
      → GPT-4o-mini 스트리밍 (temperature 0.2) → SSE
         ├─ React 3패널 (사이드바 · 법령 칩 score 배지 · LawSidePanel 조문 원문)
         ├─ citations 테이블 (인용 조문 + 점수)
@@ -251,7 +252,7 @@ RAGAS 기반 오프라인 평가 + 라우터·검색·할루시네이션·멀티
 | 멀티턴 회귀 | 5/5 |
 | 부하 (2026-07-15) | 20명 동시 무실패, Total p50 11.2s |
 
-2026-09-19 재검증: pytest 68 · 라우터 43/43 · Top-3 recall 96.7% · 할루시네이션 0/30 · 멀티턴 5/5 · RAGAS 회귀 없음 — 전 항목 일치. (이후 #51에서 버전 동기화 2개, #56에서 구간 계측 2개, #60에서 changelog 건수 대조 1개, #61에서 검색 계층 판단 11개가 추가되어 84개, 이후 #63~#72에서 11개가 더 추가되어 95개, #74에서 판정선 가드 24개가 더 추가되어 119개, #75에서 영문 README 서술 대조 1개가 더 추가되어 120개, #76에서 CHANGELOG 기준 버전 대조 1개, #77에서 반복 판정 집계 3개, #78에서 지적 문장 기계 대조 9개·Citation 검증 4개·대조군 리포트 분리 1개가 더 추가되어 현재 138개)
+2026-09-19 재검증: pytest 68 · 라우터 43/43 · Top-3 recall 96.7% · 할루시네이션 0/30 · 멀티턴 5/5 · RAGAS 회귀 없음 — 전 항목 일치. (이후 #51에서 버전 동기화 2개, #56에서 구간 계측 2개, #60에서 changelog 건수 대조 1개, #61에서 검색 계층 판단 11개가 추가되어 84개, 이후 #63~#72에서 11개가 더 추가되어 95개, #74에서 판정선 가드 24개가 더 추가되어 119개, #75에서 영문 README 서술 대조 1개가 더 추가되어 120개, #76에서 CHANGELOG 기준 버전 대조 1개, #77에서 반복 판정 집계 3개, #78에서 지적 문장 기계 대조 9개·Citation 검증 4개·대조군 리포트 분리 1개, #79에서 스코프 경계 게이트 47개가 더 추가되어 현재 185개)
 
 ```bash
 docker compose exec fastapi pip install -r eval/requirements-eval.txt   # ragas는 컨테이너 안에만
@@ -263,7 +264,7 @@ docker compose exec fastapi python -m eval.eval_retrieval               # 검색
 
 ## 발견·수정 이력
 
-증상 → 근본 원인 → 실측 검증 형식으로 85건을 기록했습니다.
+증상 → 근본 원인 → 실측 검증 형식으로 86건을 기록했습니다.
 전체 목록: [CHANGELOG.md](CHANGELOG.md)
 
 대표 사례:

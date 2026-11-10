@@ -244,6 +244,57 @@ def mentions_unknown_law(query: str, known_law_name: Optional[str], article_numb
 
 
 # ─────────────────────────────
+# 🚧 스코프 경계 게이트 (로드맵 P3)
+#
+# 조문 검색이 모두 빗나간 질문은 유료 웹 경로(Tavily·Naver + 긴 웹 컨텍스트 GPT
+# 호출)로 떨어진다. 2026-10-21 적대적 트래픽 실측: 306건 중 **302건(98.7%)**이
+# 웹으로 갔고, 그 질문들은 "deploy 권한이 있나", "As visitor, I need authorization
+# to use Blog Search" 같은 **법령 질문이 아예 아닌 것들**이었다. 무인증 엔드포인트에
+# 관계없는 질문을 반복해 던지는 것만으로 비용이 선형 증가한다.
+#
+# "범위 밖"을 일반적으로 판정하는 것은 여전히 어렵다(개념형 법령 질문). 그래서
+# **도메인 자체가 빗나간 하위 집합만** 거른다 — 한국어 비율이 낮고 법령 용어가
+# 하나도 없는 질문. 두 조건을 **모두** 요구하는 이유는 한글 비율만 보면
+# "OSHA 제17조?"처럼 짧은 혼용 질문이 걸리고, 용어만 보면 "위험성평가란
+# 무엇인가요?"처럼 용어 목록에 없는 정상 질문이 걸리기 때문이다.
+#
+# 실측(운영 로그 678행, 2026-11-10 재생 — LLM 호출 0회):
+#   · 웹 폴백 460건 중 177건 차단 (38%)
+#   · **오탐 0건** — DB가 실제로 답한 218건(pg 69 · qdrant 149) 중 걸리는 것이 없다
+#   · 차단 177건은 **전부 2026-10-21 적대적 트래픽**이고, 정상 11일의 웹 폴백
+#     158건은 하나도 건드리지 않는다 (소화기·수영장·근로기준법 같은 DB 범위 밖
+#     한국어 법령 질문은 그대로 웹 답변을 받는다)
+#
+# ⚠️ 오탐 0건의 표본은 자체 테스트 트래픽이다. 영어로 묻는 정상 사용자는 막힌다 —
+#    한국어 법령 서비스라는 전제를 받아들인 결과이고, 안내 문구로 그 전제를 밝힌다.
+#    게이트는 **웹 폴백 직전에만** 둔다. PG·Qdrant 경로 앞에 두면 DB가 답할 수 있는
+#    질문을 막을 수 있는데, 지금 위치에서는 구조적으로 불가능하다.
+# ─────────────────────────────
+_HANGUL = re.compile(r"[가-힣]")
+_LAW_TERM = re.compile(
+    r"법|조|항|호|규칙|시행령|시행규칙|판례|처벌|의무|기준|안전|보건|재해|사고|근로|사업주|노동"
+)
+OUT_OF_DOMAIN_HANGUL_RATIO = 0.3
+
+OUT_OF_SCOPE_MESSAGE = (
+    "이 질문은 제가 다루는 범위를 벗어난 것으로 보입니다.\n\n"
+    "저는 산업안전보건 분야 9개 법령(산업안전보건법·중대재해처벌등에관한법률·"
+    "산업안전보건기준에 관한 규칙 등)의 조문을 근거로 답변합니다. "
+    "법령·조문·안전보건 기준에 관해 **한국어로** 질문해 주시면 해당 조문을 찾아 "
+    "답변해 드리겠습니다."
+)
+
+
+def is_out_of_domain(query: str) -> bool:
+    """법령 질문의 형태를 아예 갖추지 않은 질문인가. **웹 폴백 직전에만** 쓴다."""
+    compact = query.replace(" ", "")
+    if not compact:
+        return True
+    hangul_ratio = len(_HANGUL.findall(compact)) / len(compact)
+    return hangul_ratio < OUT_OF_DOMAIN_HANGUL_RATIO and not _LAW_TERM.search(query)
+
+
+# ─────────────────────────────
 # 조건 기반 법령 우선순위 매핑
 # 단순 유사도 검색이 아닌, 질문의 위험 유형으로 법령 범위를 좁힌다.
 # ─────────────────────────────
@@ -553,6 +604,20 @@ async def run(plan):
         return
 
     if found.source == "web":
+        # 유료 경로 직전 스코프 경계 게이트 (P3). 여기서만 막으므로 DB가 답한
+        # 질문은 구조적으로 영향을 받지 않는다.
+        if is_out_of_domain(query):
+            yield ToolChunk(type="meta", payload={
+                "query_type": "direct_article" if is_direct_article_query else "semantic",
+                "selected_source": "out_of_scope",
+                "selected_articles": [],
+                "fallback_used": False,
+                "confidence_score": None,
+                "tool": "law_rag_tool",
+            })
+            yield ToolChunk(type="text", payload=OUT_OF_SCOPE_MESSAGE)
+            yield ToolChunk(type="status", payload="⛔ 범위 밖 질문 — 웹 검색 생략")
+            return
         async for chunk in _answer_from_web(query, context, is_direct_article_query):
             yield chunk
         return
