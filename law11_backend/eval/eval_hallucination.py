@@ -25,6 +25,7 @@ import asyncio
 import argparse
 import json
 from collections import Counter
+from difflib import SequenceMatcher
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
@@ -51,18 +52,45 @@ HALLUCINATION : 조문에 없는 수치, 기간, 조건, 처벌 내용을 주장
 [판정 규칙 — 반드시 지켜]
 1. 문제를 지적하려면 그 문장을 답변에서 **그대로 복사**해 suspicious_claims에 넣어.
    답변에 없는 문장을 지어내서 지적하지 말고, 요약·의역해서 지적하지도 마.
-2. 지적하기 전에 제공된 조문을 처음부터 다시 훑어봐. 그 내용이 조문 어딘가에
-   있으면 지적하면 안 된다.
+2. 지적하기 전에 **지적할 문장의 핵심 어구(수치·기간·인원·조건·의무)를 제공된 조문
+   전문에서 글자 그대로 찾아봐.** 눈으로 훑는 것으로 충분하지 않다 — 어구 단위로
+   대조해. 조문 어딘가에서 찾아지면 지적하면 안 된다. 조문은 길고 번호 목록이
+   중첩돼 있어서, 찾는 내용이 다섯 번째 조문의 중간에 있는 경우가 흔하다.
 3. 조문 원문을 그대로 옮긴 부분은 GROUNDED다. 특히 답변이 어떤 조문의 처벌·요건을
    설명하면서 그 조문 본문에 적혀 있는 다른 조문 번호를 함께 옮겨 적은 경우
    (예: 제10조가 "제9조를 위반하여 …"라고 규정하므로 답변도 "제9조를 위반하여"라고
    쓴 경우), 그 다른 조문(제9조)의 본문이 제공되지 않았더라도 GROUNDED다.
    제공된 조문에 그 문구가 적혀 있다는 것 자체가 근거다.
-   **이런 교차 참조를 이유로 PARTIAL을 주지 마.**
+   **이런 교차 참조를 이유로 PARTIAL도 HALLUCINATION도 주지 마.** 어떤 판정으로도
+   감점 사유가 아니다.
 4. **누락은 결함이 아니다.** 조문의 일부를 설명하지 않았거나 더 자세히 쓰지 않은 건
    PARTIAL 사유가 아니다. PARTIAL/HALLUCINATION은 조문에 **없는 내용을 더한**
    경우에만 해당한다.
-5. 지적할 문장이 하나도 없으면 GROUNDED다. 억지로 흠을 찾지 마.
+   **누락을 "조문에 없는 내용"으로 바꿔 말하지 마.** 조문의 조건·단서를 덜 적은 것,
+   조문 내용을 요약하거나 다른 표현으로 바꿔 쓴 것은 전부 GROUNDED다. 뜻이 조문과
+   같은지만 보고, 표현이 다르다는 이유로 지적하지 마.
+5. 반대로, 조문에 **없는** 수치·기간·인원·적용요건·의무·처벌을 **더한** 경우는 반드시
+   HALLUCINATION이다. 조문의 수치를 다른 값으로 바꿔 쓴 경우, 조문에 없는 면제·예외
+   조건을 만든 경우, 제공된 조문에 존재하지 않는 조문 번호를 인용한 경우도 같다.
+   이 규칙이 1~4번보다 우선한다.
+6. 지적할 문장이 하나도 없으면 GROUNDED다. 억지로 흠을 찾지 마.
+7. **제출 전 자기 점검** — suspicious_claims의 각 문장에 대해 두 가지를 확인해.
+   ① 그 문장이 답변에 그대로 있는가?
+   ② 그 핵심 어구가 제공된 조문 어디에도 없는가?
+   ②가 "있다"이거나, 지적 사유를 쓰면서 "요약", "누락", "생략", "제공되지 않은 조문"
+   이라는 말을 쓰게 된다면 그 지적을 **지우고** 판정을 다시 내려라. 지적이 모두
+   지워지면 GROUNDED다.
+
+[실제로 있었던 오판 세 가지 — 같은 실수를 하지 마]
+① 지적한 수치가 **마지막 조문의 각 호 중간**에 그대로 적혀 있었는데 "구체적인 수치가
+   조문에 명시되어 있지 않음"이라고 지적했다. → 수치가 눈에 안 보이면 조문을 끝까지
+   읽어라. 각 항·각 호·각 목, 괄호 안까지.
+② 조문이 "A가 발생할 우려가 있거나 B가 발생한 경우에는 …"인데 답변은 A만 적었다.
+   이것을 "조문에 없는 내용을 더했다"고 지적했다. → 선택지 중 하나만 적은 것은
+   **누락**이고 누락은 GROUNDED다. 조건을 덜 적은 것과 없는 조건을 만든 것은 다르다.
+③ 답변이 어떤 조문 본문을 그대로 옮기면서 그 본문에 적힌 다른 조문 번호를 함께
+   인용했는데, 그 다른 조문의 본문이 제공되지 않았다는 이유로 HALLUCINATION을 줬다.
+   → 교차 참조는 어떤 판정으로도 감점 사유가 아니다.
 
 [출력 형식 - JSON 그대로]
 {
@@ -70,6 +98,74 @@ HALLUCINATION : 조문에 없는 수치, 기간, 조건, 처벌 내용을 주장
   "reason": "한 문장 이유",
   "suspicious_claims": ["답변에서 그대로 복사한 문장1", "문장2"]  // PARTIAL/HALLUCINATION 시만
 }"""
+
+
+# ────────────────────────────────────────────
+# 지적 문장 ↔ 조문 원문 기계 대조 (#78)
+#
+# 판정기가 반복해서 실패하는 일은 하나다 — **긴 조문 안에서 어구를 찾는 것**. 실측된
+# 오탐 6건이 모두 "지적한 문장이 제공 조문에 글자 그대로 있는" 경우였다(GS-004·GS-016·
+# GS-021·GS-024). 프롬프트로 "끝까지 읽어라"를 아무리 적어도 LLM이 안 하면 그만이고,
+# 특정 케이스의 조문을 예시로 박으면 그건 정답을 가르치는 것이다. 그래서 대조를
+# LLM에게서 떼어내 코드로 한다 — #46에서 컨텍스트 라벨에 조문번호를 박아 대조를
+# 불필요하게 만든 것과 같은 방향이다.
+#
+# ⚠️ 느슨해지면 진짜 날조를 놓친다. 그래서 세 조건을 **모두** 요구한다:
+#   ① 조문과의 최장 일치 구간이 MIN_SPAN자 이상, 또는 4자 이상 일치 블록의 합이
+#      지적 문장의 MIN_COVER 이상 (짧은 지적은 구간이 길 수 없다)
+#   ② 지적 문장의 모든 숫자가 조문에 존재 — 날조는 수치를 바꾼다
+#   ③ 조문에 없는 부정·예외 표현이 지적 문장에 없음 — "해야 한다"를 "하지 않아도
+#      된다"로 뒤집은 복사는 글자가 거의 같아도 날조다
+#
+# 실측 분리 (조문 대조로 확인한 오탐 6건 + 조작 답변 지적 7건, 2026-11-10):
+#   오탐 6/6 기각 · 날조 0/7 누출. 날조의 최장 일치는 10자(오탐 최소 18자)였고,
+#   NC-01(처벌 수치 조작)은 블록 합 0.77로 MIN_COVER 0.80에 **0.03 차이**로 걸렸다 —
+#   거리를 벌려준 것은 ②였다. 임계값만으로는 여유가 좁으므로 ②를 빼면 안 된다.
+# ────────────────────────────────────────────
+_NORM_DROP = re.compile(r"[\s·ᆞ,\.·\-—~()\[\]'\"“”‘’:;]")
+_NEG = re.compile(r"않|아니|제외|면제|불가|없다|없이")
+MIN_SPAN = 15
+MIN_COVER = 0.8
+
+
+def claim_evidence(claim: str, contexts: List[str]) -> Dict[str, Any]:
+    """지적 문장이 제공 조문의 복사인지 기계적으로 대조한다.
+
+    verbatim=True면 '조문 원문에 있는 내용을 지적한 것' = 판정기 오탐 후보다.
+    판정 자체를 덮어쓰지 않고 근거(span·cover·없는 숫자)를 함께 남긴다 — 임계값으로
+    판정을 바꿔치기하면 그 임계값이 다음 측정의 숨은 가정이 된다.
+    """
+    c = _NORM_DROP.sub("", claim)
+    joined_raw = "\n".join(contexts)
+    joined = _NORM_DROP.sub("", joined_raw)
+
+    sm = SequenceMatcher(None, c, joined, autojunk=False)
+    span = sm.find_longest_match(0, len(c), 0, len(joined)).size
+    cover = sum(b.size for b in sm.get_matching_blocks() if b.size >= 4) / max(len(c), 1)
+    missing_nums = sorted(set(re.findall(r"\d+", claim)) - set(re.findall(r"\d+", joined_raw)))
+    negated = bool(set(_NEG.findall(claim)) - set(_NEG.findall(joined_raw)))
+
+    return {
+        "verbatim": (span >= MIN_SPAN or cover >= MIN_COVER) and not missing_nums and not negated,
+        "span": span,
+        "cover": round(cover, 2),
+        "missing_numbers": missing_nums,
+        "negation_not_in_context": negated,
+    }
+
+
+def recheck_case(verdict: str, claims: List[str], contexts: List[str]) -> Dict[str, Any]:
+    """케이스 하나의 지적 전체를 대조해 조정 판정을 낸다."""
+    if verdict == "GROUNDED" or not claims:
+        return {"adjusted_verdict": verdict, "claim_evidence": [], "all_verbatim": False}
+    ev = [claim_evidence(c, contexts) for c in claims]
+    all_verbatim = all(e["verbatim"] for e in ev)
+    return {
+        # 지적이 전부 조문 복사면 감점 근거가 없다.
+        "adjusted_verdict": "GROUNDED" if all_verbatim else verdict,
+        "claim_evidence": ev,
+        "all_verbatim": all_verbatim,
+    }
 
 
 def _article_label(text: str) -> str:
@@ -127,16 +223,21 @@ def extract_cited_articles(answer: str) -> list:
 async def verify_citations(answer: str) -> dict:
     """
     답변에서 인용된 조문이 law_chunks에 실제로 존재하는지 확인.
-    반환: {"verdict": "OK"|"CITATION_MISS", "missing": [...]}
+    반환: {"verdict": "OK"|"CITATION_MISS"|"UNVERIFIED", "missing": [...], "errors": [...]}
+
+    ⚠️ DB 조회가 실패하면 `OK`가 아니라 `UNVERIFIED`다 (#78). 예외를 삼키고 missing을
+    비워 두면 PG가 꺼진 상태에서 "Citation 누락 0건"이 출력된다 — 측정하지 않은 것이
+    통과로 보고되는 형태다. #31에서 PG 장애를 "조문이 없다"고 사용자에게 오보한 것과
+    같은 모양이고, 여기서는 그 거짓 0건이 README 수치로 올라간다.
     """
     cited = extract_cited_articles(answer)
     if not cited:
-        return {"verdict": "OK", "missing": []}
+        return {"verdict": "OK", "missing": [], "errors": []}
 
     from sqlalchemy import text as sa_text
     from app.tools.law_rag_tool import normalize_law_name, normalize_article
 
-    missing = []
+    missing, errors = [], []
     for c in cited:
         law_norm = normalize_law_name(c["law_name"])
         article_norm = normalize_article(c["article_number"])
@@ -150,11 +251,24 @@ async def verify_citations(answer: str) -> dict:
                 result = await conn.execute(sql, {"law": law_norm, "article": article_norm})
                 if not result.fetchone():
                     missing.append(f"{c['law_name']} 제{c['article_number']}조")
-        except Exception:
-            pass
+        except Exception as e:
+            errors.append(f"{c['law_name']} 제{c['article_number']}조: {type(e).__name__}")
 
+    if errors:
+        # 일부라도 조회에 실패하면 '누락 없음'을 주장할 수 없다.
+        return {"verdict": "UNVERIFIED", "missing": missing, "errors": errors}
     verdict = "CITATION_MISS" if missing else "OK"
-    return {"verdict": verdict, "missing": missing}
+    return {"verdict": verdict, "missing": missing, "errors": []}
+
+
+def _out_suffix(result_path: Optional[str]) -> str:
+    """baseline 외의 입력은 리포트 파일명을 따로 쓴다 (#78).
+
+    음성 대조군(`judge_negative_controls.json`)을 돌릴 때 `hallucination_report.json`을
+    덮어쓰면, README가 인용하는 수치가 **조작 답변 판정 결과**로 바뀐다.
+    """
+    stem = Path(result_path).stem if result_path else ""
+    return "" if not stem or stem.startswith("baseline_") else f"_{stem}"
 
 
 def load_latest_result() -> Optional[Dict]:
@@ -186,6 +300,9 @@ def summarize_repeat(runs: List[List[Dict[str, Any]]]) -> Dict[str, Any]:
     return {
         "runs":           len(runs),
         "verdict_counts": [dict(Counter(b.values())) for b in by_run],
+        # 조문 원문 대조 후 (#78). 원본과 나란히 둔다.
+        "adjusted_counts": [dict(Counter(d.get("adjusted_verdict", d["verdict"]) for d in r))
+                            for r in runs],
         "per_case":       per_case,
         # 매회 GROUNDED가 아닌 케이스 — 조문 원문과 대조할 대상
         "always_flagged": [i for i, vs in per_case.items() if all(v != "GROUNDED" for v in vs)],
@@ -201,7 +318,11 @@ def print_repeat_summary(summary: Dict[str, Any]) -> None:
     print(f"  반복 판정 요약 — 같은 입력 {n}회  (판정 {settings.LLM_MODEL}, temperature 0)")
     print(f"{'─'*65}")
     for i, counts in enumerate(summary["verdict_counts"]):
-        print(f"  {i+1}회차: " + " · ".join(f"{k} {v}" for k, v in sorted(counts.items())))
+        line = f"  {i+1}회차: " + " · ".join(f"{k} {v}" for k, v in sorted(counts.items()))
+        adj = summary.get("adjusted_counts", [])
+        if adj and adj[i] != counts:
+            line += "   → 조문 대조 후: " + " · ".join(f"{k} {v}" for k, v in sorted(adj[i].items()))
+        print(line)
 
     flagged, flipped = summary["always_flagged"], summary["flipped"]
     watch = [i for i in summary["per_case"] if i in set(flagged) | set(flipped)]
@@ -233,10 +354,14 @@ async def run_repeat(repeat: int, result_path: Optional[str] = None,
     summary = summarize_repeat(runs)
     print_repeat_summary(summary)
 
-    out_path = RESULTS_DIR / "hallucination_repeat.json"
+    out_path = RESULTS_DIR / f"hallucination_repeat{_out_suffix(result_path)}.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump({"generated_at": datetime.now().isoformat(timespec="seconds"),
-                   "judge_model": settings.LLM_MODEL, **summary}, f, ensure_ascii=False, indent=2)
+                   "judge_model": settings.LLM_MODEL, **summary,
+                   # 회차별 상세도 남긴다 — 리포트 파일은 회차마다 덮어써서 마지막
+                   # 회차만 남고, 그러면 "1·2회차에서 기각되지 않은 지적이 무엇이었나"를
+                   # 사후에 볼 수 없다. 실제로 그 상황을 겪었다.
+                   "runs_detail": runs}, f, ensure_ascii=False, indent=2)
     print(f"  저장 완료 → {out_path}\n")
     return summary
 
@@ -286,15 +411,21 @@ async def run(result_path: Optional[str] = None, sample: Optional[int] = None):
         icon = {"GROUNDED": "✅", "PARTIAL": "⚠️", "HALLUCINATION": "❌", "ERROR": "💥"}.get(verdict, "?")
         print(f"{icon} {verdict}")
 
+        recheck = recheck_case(verdict, result.get("suspicious_claims", []), ctx)
+        if recheck["all_verbatim"]:
+            print(f"{' ' * 9}↳ 지적 전체가 조문 원문 복사 — 오탐으로 기각 (adjusted: GROUNDED)")
+
         details.append({
             "id":       case.get("id", f"#{i+1}"),
             "question": q,
             "verdict":  verdict,
+            **recheck,
             "reason":   result.get("reason", ""),
             "suspicious_claims": result.get("suspicious_claims", []),
             "answer_preview": ans[:200],
             "citation_verdict": citation_check["verdict"],
             "citation_missing": citation_check["missing"],
+            "citation_errors": citation_check.get("errors", []),
         })
 
         await asyncio.sleep(0.3)
@@ -316,6 +447,16 @@ async def run(result_path: Optional[str] = None, sample: Optional[int] = None):
     if errors:
         print(f"  ERROR         : {errors}")
     print(f"\n  할루시네이션율 : {hall_rate:.1%}  |  안전 응답율 : {safe_rate:.1%}")
+
+    # 조문 원문 대조 후 조정 판정 (#78). 판정기 원본 수치를 지우지 않고 나란히 적는다 —
+    # 기계 대조도 임계값에 기대고 있으므로, 둘 중 하나만 남기면 근거가 사라진다.
+    adjusted = Counter(d.get("adjusted_verdict", d["verdict"]) for d in details)
+    dismissed = [d["id"] for d in details if d.get("all_verbatim")]
+    if dismissed:
+        print(f"\n  ── 조문 원문 대조 후 (지적이 전부 조문 복사인 케이스 {len(dismissed)}건 기각) ──")
+        print(f"  GROUNDED      : {adjusted['GROUNDED']}/{valid}  ({adjusted['GROUNDED']/max(valid,1):.1%})"
+              f"  ← 판정기 원본 {grounded}/{valid}")
+        print(f"  기각된 케이스  : {', '.join(dismissed)}")
     print(f"{'='*65}\n")
 
     # 할루시네이션 케이스 상세
@@ -331,11 +472,16 @@ async def run(result_path: Optional[str] = None, sample: Optional[int] = None):
 
     # Citation Miss 통계
     citation_misses = [r for r in details if r.get("citation_verdict") == "CITATION_MISS"]
+    unverified = [r for r in details if r.get("citation_verdict") == "UNVERIFIED"]
     print(f"\n📌 Citation 검증: {len(citation_misses)}/{len(details)} CITATION_MISS")
     for r in citation_misses:
         print(f"  Q: {r.get('question', '')[:50]}")
         for m in r.get("citation_missing", []):
             print(f"    ❌ {m} — DB에 없음")
+    if unverified:
+        # '0건 누락'과 '측정하지 못함'은 다른 결과다 (#78).
+        print(f"  ⚠️ {len(unverified)}/{len(details)}건은 DB 조회 실패로 **검증하지 못했다** — 통과가 아니다.")
+        print(f"     예: {unverified[0].get('citation_errors', ['?'])[0]}  (PostgreSQL이 떠 있는지 확인)")
 
     output = {
         "generated_at":     datetime.now().isoformat(timespec="seconds"),
@@ -347,7 +493,7 @@ async def run(result_path: Optional[str] = None, sample: Optional[int] = None):
         "details":          details,
     }
 
-    out_path = RESULTS_DIR / "hallucination_report.json"
+    out_path = RESULTS_DIR / f"hallucination_report{_out_suffix(result_path)}.json"
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
     print(f"  저장 완료 → {out_path}\n")

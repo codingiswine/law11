@@ -85,6 +85,11 @@ law11_backend/eval/results/*.json
 !law11_backend/eval/results/baseline_20261104_1801_full.json
 !law11_backend/eval/results/baseline_20261104_1821_full.json
 !law11_backend/eval/results/hallucination_report.json
+# 3회 반복 판정 근거 — README가 인용하는 '3회 동일' 수치의 출처 (#77·#78)
+!law11_backend/eval/results/hallucination_repeat.json
+# 음성 대조군(조작 답변 4종) 판정 결과 — 탐지력 유지의 근거 (#78)
+!law11_backend/eval/results/hallucination_report_judge_negative_controls.json
+!law11_backend/eval/results/hallucination_repeat_judge_negative_controls.json
 
 # =========================================
 # 🛠️ INTERNAL DEV DOCS (Claude Code 워크플로우)

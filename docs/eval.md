@@ -93,7 +93,17 @@ docker compose exec fastapi python -m eval.eval_hallucination
 
 # 판정기 흔들림 — 같은 입력 3회, 케이스별 이력 (LLM 호출도 3배, #77)
 docker compose exec fastapi python -m eval.eval_hallucination --repeat 3
+
+# 음성 대조군 — 조작 답변 4종이 전부 HALLUCINATION으로 잡히는지 (#46·#78)
+docker compose exec fastapi python -m eval.eval_hallucination \
+  --result eval/judge_negative_controls.json --repeat 3
 ```
+
+**음성 대조군을 먼저 돌려라.** 판정 프롬프트를 고쳐 오탐을 줄이는 작업은 탐지력을 같이 죽이기 쉽다. `eval/judge_negative_controls.json`은 실제 검색 조문에 조작한 답변 4종(처벌 수치 조작 / 없는 적용요건 / 없는 의무 창작 / 없는 조문 인용)을 붙인 파일이고, 4건 전부 HALLUCINATION이 아니면 그 프롬프트 수정은 기각이다. 리포트는 입력 파일명을 따라 `hallucination_report_judge_negative_controls.json`으로 따로 저장되므로 본 리포트를 덮어쓰지 않는다.
+
+**지적 문장 기계 대조 (#78).** 판정기가 지적한 문장이 제공 조문의 복사인지 코드로 대조해(`claim_evidence`), 지적이 전부 복사면 그 케이스를 기각하고 `adjusted_verdict`에 적는다. 판정기 원본 `verdict`는 지우지 않는다. 기각 조건은 세 개를 **모두** 만족해야 한다 — ① 최장 일치 15자 이상 또는 일치 블록 합이 지적 문장의 80% 이상, ② 지적 문장의 모든 숫자가 조문에 존재, ③ 조문에 없는 부정·예외 표현이 없음. ②·③이 없으면 조문을 복사하고 수치만 바꾼 답변, 결론만 부정으로 뒤집은 답변이 기각된다(`tests/test_judge_claim_evidence.py`가 양방향을 지킨다).
+
+**판정 결과는 날짜를 건너면 재현되지 않는다.** 같은 입력·같은 프롬프트·같은 모델명으로 2026-11-04에 `GROUNDED 27/28`, 2026-11-10에 `25/28`이 나왔다(#78). 과거 수치를 기준선으로 쓰지 말고 비교하려는 변경의 전후를 같은 날 측정한다.
 
 `--repeat N`은 '율'이 아니라 **케이스별 이력**을 낸다. 매회 GROUNDED가 아닌 케이스(`always_flagged` — 조문 원문과 대조할 대상)와 회차마다 판정이 달라진 케이스(`flipped` — temperature 0에서도 뒤집히므로 판정기 불안정의 직접 증거)를 따로 적는다. 반복성은 신호이지 증거가 아니다 — #72에서 GS-024는 3/3 반복된 실제 결함이었고 GS-004는 3/3 반복된 오탐이었다. 결과는 `eval/results/hallucination_repeat.json`에 남는다.
 

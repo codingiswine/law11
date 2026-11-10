@@ -1,0 +1,182 @@
+{
+  "generated_at": "2026-11-10T19:43:03",
+  "judge_model": "gpt-4o-mini",
+  "runs": 3,
+  "verdict_counts": [
+    {
+      "GROUNDED": 26,
+      "PARTIAL": 1,
+      "HALLUCINATION": 1
+    },
+    {
+      "GROUNDED": 26,
+      "PARTIAL": 1,
+      "HALLUCINATION": 1
+    },
+    {
+      "GROUNDED": 26,
+      "PARTIAL": 1,
+      "HALLUCINATION": 1
+    }
+  ],
+  "adjusted_counts": [
+    {
+      "GROUNDED": 27,
+      "PARTIAL": 1
+    },
+    {
+      "GROUNDED": 27,
+      "PARTIAL": 1
+    },
+    {
+      "GROUNDED": 28
+    }
+  ],
+  "per_case": {
+    "GS-001": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-002": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-003": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-004": [
+      "PARTIAL",
+      "PARTIAL",
+      "PARTIAL"
+    ],
+    "GS-005": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-006": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-007": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-008": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-009": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-010": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-011": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-012": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-014": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-015": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-016": [
+      "HALLUCINATION",
+      "HALLUCINATION",
+      "HALLUCINATION"
+    ],
+    "GS-017": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-018": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-019": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-020": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-021": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-022": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-023": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-024": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-025": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-026": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-028": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-029": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ],
+    "GS-030": [
+      "GROUNDED",
+      "GROUNDED",
+      "GROUNDED"
+    ]
+  },
+  "always_flagged": [
+    "GS-004",
+    "GS-016"
+  ],
+  "flipped": []
+}

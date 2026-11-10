@@ -9,7 +9,14 @@ CI의 requirements.txt 환경에서 그대로 import된다 — harness와 달리
 """
 import pytest
 
-from eval.eval_hallucination import summarize_repeat
+from eval.eval_hallucination import _out_suffix, summarize_repeat
+
+
+def test_negative_controls_do_not_overwrite_the_baseline_report():
+    """음성 대조군 실행이 본 리포트를 덮어쓰면 README 수치가 조작 답변 판정 결과가 된다 (#78)."""
+    assert _out_suffix("eval/judge_negative_controls.json") == "_judge_negative_controls"
+    assert _out_suffix("eval/results/baseline_20261104_1821_full.json") == ""
+    assert _out_suffix(None) == ""
 
 
 def _run(**verdicts):

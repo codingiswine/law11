@@ -17,11 +17,11 @@
 | 법령 조문 | 1,641건 / 9개 법령 | `law_chunks` (PG ↔ Qdrant 건수 일치 확인됨) |
 | 판례 | 52건 / 6개 법령 (대법원) | `case_law_chunks` |
 | Tool | 7개 | `routes.py` `tool_map` |
-| pytest | 124개 | `python -m pytest -q` |
-| changelog | 76건 (+ 도입 이전 7건) | README |
+| pytest | 138개 | `python -m pytest -q` |
+| changelog | 78건 (+ 도입 이전 7건) | README |
 | Top-3 검색 재현율 | 93.3% (Top-1 70.0%, Top-5·10 100%) | `python -m eval.eval_retrieval` (LLM 비용 없음) |
 | RAGAS (F / AR / CP / CR) | 0.669~0.814 / 0.606~0.616 / 0.993~0.996 / 0.918~0.929 | `python -m eval.harness` (같은 조건 3회 범위) |
-| 할루시네이션 | HALLUCINATION 0건, GROUNDED 27/28 (3회 동일) | `python -m eval.eval_hallucination` |
+| 할루시네이션 | 조문 대조 후 GROUNDED 27~28/28, HALLUCINATION 0건 (판정기 원본 26/28, 3회 동일 — #78) | `python -m eval.eval_hallucination` |
 | 라우터 정확도 | 43/43 | `python -m eval.eval_router` |
 | 배포 | **없음** (EC2 삭제함) | — |
 | 실사용자 | **0명** | — |
@@ -31,6 +31,12 @@
 > 판정기 거짓 지적 — #72), 이 낡은 수치가 외부 문서로 번진 사례가 있다.
 > Top-3는 법제처 재동기화 전 96.7% → 재측정 93.3%(#71). faithfulness는 실측 노이즈가
 > 19.3%라 단일 실행 비교가 무의미하므로 범위로 적는다(#72·#74).
+>
+> **2026-11-10 추가(#78)** — 할루시네이션 수치는 같은 입력·같은 프롬프트로 다시 돌렸을 때
+> 11-04의 `27/28`이 `25/28`로 나왔다. 판정 결과는 날짜를 건너면 재현되지 않는다(#62의
+> 결론이 날짜 사이에도 성립). 지금 값은 판정기 원본 26/28에 **지적 문장이 조문 원문
+> 복사인지 기계 대조**를 덧댄 결과이고, 두 수치를 나란히 적는다 — 기계 대조도 임계값에
+> 기대므로 한쪽만 남기면 근거가 사라진다.
 
 **환경 주의사항**
 
