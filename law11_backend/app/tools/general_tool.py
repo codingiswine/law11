@@ -1,4 +1,5 @@
 from app.config import settings
+from core.logger import law11_logger as logger
 from core.stream import ToolChunk
 
 
@@ -45,4 +46,8 @@ async def run(plan):
         yield ToolChunk(type="status", payload="✅ 일반 대화 완료")
 
     except Exception as e:
-        yield ToolChunk(type="error", payload=f"❌ [GeneralTool] 오류: {str(e)}")
+        # ⚠️ 예외 원문을 그대로 내보내면 OpenAI 인증 오류의 키 접두어 같은 내부 정보가
+        # SSE로 사용자 화면에 간다. #31/#66은 run_tool 밖으로 raise된 예외만 가렸고,
+        # 툴이 직접 yield하는 error 청크는 걸러지지 않았다 (#83). 상세는 로그로만.
+        logger.error(f"[GeneralTool 오류] {e}")
+        yield ToolChunk(type="error", payload="❌ 처리 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")

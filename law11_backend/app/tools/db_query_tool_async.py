@@ -11,6 +11,7 @@ import asyncio
 from sqlalchemy import text
 from typing import List, Dict, Optional, AsyncGenerator
 from core.stream import ToolChunk
+from core.logger import law11_logger as logger
 from app.services.question_router import _DB_KEYWORDS
 try:
     from app.config import settings   # ✅ Docker 실행 시
@@ -115,7 +116,9 @@ async def run(plan) -> AsyncGenerator[ToolChunk, None]:
     try:
         results = await run_db_query_tool(query, plan.args.get("session_id"))
     except Exception as e:
-        yield ToolChunk(type="error", payload=f"⚠️ DB 쿼리 실행 중 오류: {str(e)}")
+        # asyncpg 예외에는 테이블·컬럼명이 들어간다 — 사용자 청크에는 싣지 않는다 (#83).
+        logger.error(f"[DB Tool 오류] {e}")
+        yield ToolChunk(type="error", payload="⚠️ 대화 기록 조회 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
         return
 
     if not results:
