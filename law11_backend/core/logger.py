@@ -2,19 +2,19 @@ import logging
 import os
 import sys
 from pathlib import Path
-from logging.handlers import RotatingFileHandler
-from datetime import datetime
+from logging.handlers import TimedRotatingFileHandler
 
 # ─────────────────────────────────────────────
-# 📁 1. 날짜별 로그 폴더 자동 생성
+# 📁 1. 로그 폴더
 # ─────────────────────────────────────────────
 # Docker 환경 고려: /app/logs
 BASE_LOG_DIR = Path("/app/logs") if os.path.exists("/app") else Path("logs")
 BASE_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-today = datetime.now().strftime("%Y-%m-%d")
-LOG_DIR = BASE_LOG_DIR / today
-LOG_DIR.mkdir(parents=True, exist_ok=True)
+# ⚠️ 예전엔 임포트 시점의 날짜로 logs/YYYY-MM-DD/ 폴더를 만들어 거기에만 썼다 — 프로세스가
+# `restart: unless-stopped`로 몇 주 떠 있으면 모든 로그가 시작일 폴더에 쌓였다 (#90).
+# 날짜 분리는 핸들러가 자정에 회전하며 맡는다: server.log → server.log.2026-11-12 …
+LOG_DIR = BASE_LOG_DIR
 
 # ─────────────────────────────────────────────
 # 📄 2. 로그 파일 경로 설정
@@ -22,6 +22,13 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 CHAT_LOG = LOG_DIR / "chat_history.log"
 SERVER_LOG = LOG_DIR / "server.log"
 ERROR_LOG = LOG_DIR / "error.log"
+
+
+def _daily(path: Path, level: int, backup_count: int) -> TimedRotatingFileHandler:
+    h = TimedRotatingFileHandler(str(path), when="midnight", backupCount=backup_count, encoding="utf-8")
+    h.setLevel(level)
+    h.setFormatter(formatter)
+    return h
 
 # ─────────────────────────────────────────────
 # 🎨 3. 로그 포맷터 (프로덕션 버전)
@@ -48,15 +55,8 @@ law11_logger = logging.getLogger("Law11Logger")
 law11_logger.setLevel(LOG_LEVEL)
 law11_logger.propagate = False  # 중복 로깅 방지
 
-# 파일 핸들러 (상세 로그)
-chat_handler = RotatingFileHandler(
-    str(CHAT_LOG),
-    maxBytes=10_000_000,  # 10MB
-    backupCount=10,
-    encoding="utf-8"
-)
-chat_handler.setLevel(logging.DEBUG)
-chat_handler.setFormatter(formatter)
+# 파일 핸들러 (상세 로그) — 자정 회전, 10일 보관
+chat_handler = _daily(CHAT_LOG, logging.DEBUG, backup_count=10)
 
 # 콘솔 핸들러 (간단한 로그)
 console_handler = logging.StreamHandler(sys.stdout)
@@ -73,14 +73,7 @@ uvicorn_access = logging.getLogger("uvicorn.access")
 uvicorn_access.setLevel(logging.INFO)
 uvicorn_access.propagate = False
 
-server_handler = RotatingFileHandler(
-    str(SERVER_LOG),
-    maxBytes=20_000_000,  # 20MB
-    backupCount=5,
-    encoding="utf-8"
-)
-server_handler.setLevel(logging.INFO)
-server_handler.setFormatter(formatter)
+server_handler = _daily(SERVER_LOG, logging.INFO, backup_count=5)
 
 uvicorn_access.addHandler(server_handler)
 
@@ -91,14 +84,7 @@ uvicorn_error = logging.getLogger("uvicorn.error")
 uvicorn_error.setLevel(logging.ERROR)
 uvicorn_error.propagate = False
 
-error_handler = RotatingFileHandler(
-    str(ERROR_LOG),
-    maxBytes=20_000_000,  # 20MB
-    backupCount=10,
-    encoding="utf-8"
-)
-error_handler.setLevel(logging.ERROR)
-error_handler.setFormatter(formatter)
+error_handler = _daily(ERROR_LOG, logging.ERROR, backup_count=10)
 
 # 에러는 콘솔에도 출력
 error_console = logging.StreamHandler(sys.stderr)

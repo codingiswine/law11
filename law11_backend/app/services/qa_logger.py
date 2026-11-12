@@ -36,7 +36,8 @@ def log_request(
         "selected_source": selected_source,
         "selected_articles": selected_articles,
         "fallback_used": fallback_used,
-        "confidence_score": round(confidence_score, 4) if confidence_score else None,
+        # `if confidence_score`는 정당한 0.0을 None으로 바꿨다 — 0점과 '점수 없음'은 다르다 (#90)
+        "confidence_score": round(confidence_score, 4) if confidence_score is not None else None,
         "timings": timings,
     }
     today = datetime.now().strftime("%Y%m%d")

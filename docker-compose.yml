@@ -1,12 +1,18 @@
-version: "3.8"
-
 services:
   fastapi:
     build: ./law11_backend
     container_name: law11_backend
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
+    # 8000은 의도적으로 모든 인터페이스에 연다 — 브라우저가 VITE_API_URL로 직접 호출하는 공개 API다.
+    # DB·Qdrant는 아래에서 127.0.0.1로 묶는다 (P7).
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     volumes:
       - ./law11_backend/app:/app/app
       - ./law11_backend/core:/app/core
@@ -37,7 +43,8 @@ services:
       args:
         - VITE_API_URL=${VITE_API_URL:-http://localhost:8000}
     depends_on:
-      - fastapi
+      fastapi:
+        condition: service_healthy   # 백엔드가 /health에 답한 뒤에 프론트를 올린다 (#90)
     ports:
       - "${FRONTEND_HTTP_PORT:-3000}:80"
     restart: unless-stopped

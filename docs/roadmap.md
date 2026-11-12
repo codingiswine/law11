@@ -40,9 +40,9 @@
 
 **환경 주의사항**
 
-- `ragas`는 앱 `requirements.txt`에 없다(langchain 버전 충돌 때문). 컨테이너를
-  재생성하면 사라지므로 `docker compose exec fastapi pip install -r eval/requirements-eval.txt`
-  재실행 필요.
+- `ragas`는 앱 `requirements.txt`에 없다(langchain 버전 충돌 때문). 전용 venv에
+  `pip install -r requirements.txt -r requirements-eval.txt`로 설치한다 (#69, #90 — 핀 목록은
+  `law11_backend/requirements-eval.txt` 하나).
 - `eval/harness.py`에 `ragas==0.1.21`의 한국어 인코딩 버그 몽키패치가 들어 있다(#40).
   ragas 버전을 올리면 이 패치가 깨지거나 불필요해질 수 있으니 먼저 확인할 것.
 - 관리자 엔드포인트는 `ADMIN_API_KEY` 미설정 시 503으로 비활성화된다(fail-closed).
@@ -280,7 +280,7 @@ P1은 P2를 하는 과정에서 자연스럽게 필요해진다(새 기능도 �
 
 ## 6. 재개 시 첫 30분에 할 것
 
-1. `docker compose up -d` → `docker compose exec fastapi pip install -r eval/requirements-eval.txt`
+1. `docker compose up -d` → `.venv-eval` 활성화 (`pip install -r requirements.txt -r requirements-eval.txt`, #90)
 2. `python -m eval.eval_retrieval` 실행 — 검색이 여전히 96.7%인지 (LLM 비용 없어 무료)
 3. §1 스냅샷 표와 대조해 드리프트 확인 (법령이 주간 자동 갱신되므로 조문 수가 바뀌었을 수 있음)
 4. §2를 읽고 **이미 기각된 것을 다시 시작하지 않기**

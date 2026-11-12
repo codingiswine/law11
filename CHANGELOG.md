@@ -1,7 +1,7 @@
 # Law11 Changelog
 
 루트 [README.md](README.md)에서 옮겨온 발견·수정 이력입니다. 형식: **증상 → 근본 원인 → 실측 검증**.
-번호(#1~#89)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
+번호(#1~#90)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
 
 ## 목차
 
@@ -94,6 +94,7 @@
 - [87. 요청마다 동기 디스크 I/O가 이벤트 루프를 세우고 있었다 v1.18.7](#87-요청마다-동기-디스크-io가-이벤트-루프를-세우고-있었다-v1187)
 - [88. 라우터가 두 번째 OpenAI 클라이언트를 만들어 쓰고 있었다 — 규칙은 있었지만 지키는 코드가 없었다 v1.18.8](#88-라우터가-두-번째-openai-클라이언트를-만들어-쓰고-있었다--규칙은-있었지만-지키는-코드가-없었다-v1188)
 - [89. 실험 경로(/ask-multi)의 배선 결함 넷 — 판례 미연결·context 유실·매 요청 compile·채점 컨텍스트 불일치 v1.18.9](#89-실험-경로ask-multi의-배선-결함-넷--판례-미연결context-유실매-요청-compile채점-컨텍스트-불일치-v1189)
+- [90. 운영·설정 위생 여섯 — 문서가 가리키던 의존성 파일은 옛것이었다 v1.19.0](#90-운영설정-위생-여섯--문서가-가리키던-의존성-파일은-옛것이었다-v1190)
 - [P1. 조문 본문의 항·호 번호 중복 + 인용 배지 순서/점수 불일치 2c8097e](#p1-조문-본문의-항호-번호-중복--인용-배지-순서점수-불일치-2c8097e)
 - [P2. 스트림 완료 콜백 경합 + confidence_score 불일치 764b646](#p2-스트림-완료-콜백-경합--confidence_score-불일치-764b646)
 - [P3. 웹 폴백 인용의 "0%" 관련도 배지 ffdcb2f](#p3-웹-폴백-인용의-0-관련도-배지-ffdcb2f)
@@ -1945,6 +1946,26 @@ mutation test 3회로 두 조건이 각각 **유일한 방어선**임을 확인�
 **검증**: `tests/test_multi_agent_wiring.py` 4개 (①~④ 각 1개) + 기존 `test_law_agent_node`·`test_self_rag_subgraph`의 mock 대상을 새 배선에 맞게 수정. mutation test 4종 각각 해당 테스트 1개만 실패: 맵 항목 제거 / `tool_args` 병합 제거 / 매 요청 compile 복원 / 채점 컨텍스트 비우기. `pytest` 219 collected (218 passed + 설계상 skip 1).
 
 **남은 과제**: ④를 고쳐도 재시도 루프는 여전히 **같은 검색을 다시 돌린다** — 재시도에 새 정보가 없다. 질의 재작성(query rewrite) 없는 재시도는 비용만 쓰므로, 이 경로를 계속 쓸 거면 재시도 자체를 빼거나 재작성 노드를 넣어야 한다. 실험 경로의 다음 결정 사항으로 둔다.
+
+### 90. 운영·설정 위생 여섯 — 문서가 가리키던 의존성 파일은 옛것이었다 `v1.19.0`
+
+코드 점검의 마지막 묶음. 요청 경로 바깥 — 설정·스키마·컨테이너·로그·문서 — 에서 나온 여섯 건이다. 하나씩은 작지만 공통점이 있다: **전부 로컬 1인 개발에서는 드러나지 않고, 다른 사람(또는 다른 날의 내가) 다른 조건으로 올릴 때 터지는 것들**이다.
+
+**① eval 의존성 파일이 두 벌이었고 문서는 옛것을 가리켰다.** `eval/requirements-eval.txt`(7월, `ragas==0.1.21` 한 줄)와 `requirements-eval.txt`(#69, langchain 0.2 계열·datasets·numpy까지 전체 핀). README 두 곳·`docs/eval.md`·`docs/roadmap.md` 두 곳·백엔드 README가 **모두 옛 파일**을 가리켰다. 옛 파일로 설치하면 ragas만 고정되고 나머지가 핀 없이 다운그레이드돼 — #69가 "환경 복원에만 시간을 썼다"고 기록한 바로 그 상태가 재발한다. 게다가 안내 명령이 `docker compose exec fastapi pip install …`이라 **앱 컨테이너 환경에 ragas 계열을 섞어 넣는** 방식이었는데, 새 파일 머리말은 그걸 금지한다. 옛 파일을 지우고 여섯 곳을 전용 `.venv-eval` 안내로 통일했다.
+
+**② `.env.example`에 코드가 읽는 키 5개가 없었다** — `JUDGE_MODEL`(#57) · `LOG_LEVEL` · `RATE_LIMIT_ENABLED` · `RATE_LIMIT_ASK` · `RATE_LIMIT_DEFAULT`(#65). 레이트리밋은 배포 보안 노브인데 운영자가 존재를 알 수 없었다. 기본값과 함께 적었다.
+
+**③ `init.sql`이 DB 역할 이름을 하드코딩했다** — 끝의 `GRANT ALL … TO daniel`. compose는 `${DB_USER:-daniel}`로 바꿀 수 있게 해 놓고, 스키마는 `daniel`을 못 박아 둔 것. DB_USER를 바꾸면 initdb가 `role "daniel" does not exist`로 **스크립트 전체를 실패**시킨다. initdb는 POSTGRES_USER로 실행돼 만든 테이블의 소유자가 곧 앱 사용자이므로 GRANT는 필요 없었다. 삭제.
+
+**④ compose: 백엔드 healthcheck 없음, 프론트가 백엔드를 안 기다림, 폐기된 `version` 키.** `/health`를 15초 간격으로 확인하고 프론트는 `service_healthy`를 기다린다. `docker compose config`로 검증.
+
+**⑤ 로그 폴더가 임포트 시점 날짜에 고정됐다.** `core/logger.py`가 `today`를 모듈 로드 때 한 번 계산해 `logs/YYYY-MM-DD/`를 만들었다 — "날짜별 폴더"라는 의도와 반대로, `restart: unless-stopped`로 몇 주 떠 있는 프로세스는 **시작일 폴더에 전부** 쓴다. `TimedRotatingFileHandler(when="midnight")`로 바꿔 날짜 분리를 핸들러가 맡는다(`server.log.2026-11-12`). 로그 경로를 읽는 코드는 없어(`eval/logs`는 별도) 영향 범위는 사람 눈뿐이다.
+
+**⑥ `qa_logger`가 `confidence_score` 0.0을 null로 바꿨다** — `if confidence_score`. 0점과 "점수 없음"은 다른 사실이다. `is not None`.
+
+**검증 — 규칙을 테스트로**: `tests/test_ops_hygiene.py` 5개. (a) 코드의 `os.getenv` 키 전부가 `.env.example`에 있는지(주석 처리 포함), (b) `init.sql`에 GRANT가 없는지, (c) 0.0이 0.0으로 기록되는지(tmp 디렉터리), (d) 파일 핸들러가 자정 회전이고 날짜 폴더 아래가 아닌지, (e) 다섯 문서가 가리키는 eval 의존성 경로가 실제로 존재하는지. mutation test: `.env.example`에서 키 하나를 지우면 (a)가 그 키 이름으로 실패, `if confidence_score`로 되돌리면 (c) 실패. (e)는 작성 직후 **내가 쓴 문장 속 옛 경로**까지 잡아내 문구를 고치게 했다 — 테스트가 작성자부터 걸러낸 셈. `pytest` 224 collected (223 passed + 설계상 skip 1).
+
+**하지 않은 것**: `qdrant/qdrant:latest` 고정. 지금 `qdrant_storage/`에 저장 포맷을 쓴 서버 버전을 알 수 없고(Docker 데몬이 내려가 있어 확인 불가), 모르는 버전으로 고정하면 다음 `up`에서 저장소 호환이 깨질 수 있다. 데몬이 올라오면 `docker compose exec qdrant ./qdrant --version`으로 확인한 뒤 그 버전으로 고정할 것. 또 `init.sql`의 `uuid-ossp` 확장은 쓰는 컬럼이 없는 죽은 코드지만 이 항목 범위 밖이라 두었다.
 
 ---
 

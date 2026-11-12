@@ -149,6 +149,6 @@ CREATE TABLE IF NOT EXISTS case_citations (
 CREATE INDEX IF NOT EXISTS idx_case_citations_chat_history_id ON case_citations(chat_history_id);
 CREATE INDEX IF NOT EXISTS idx_case_citations_case_number ON case_citations(case_number);
 
--- Grant permissions
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO daniel;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO daniel;
+-- GRANT 없음 (#90): 이 스크립트는 initdb가 POSTGRES_USER(=${DB_USER})로 실행하므로 만든 테이블의
+-- 소유자가 곧 앱 사용자다. 예전의 `GRANT ... TO daniel`은 DB_USER를 바꾸면 "role does not exist"로
+-- initdb 자체를 실패시키던 하드코딩이었다.
