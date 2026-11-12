@@ -59,7 +59,7 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from typing import Optional, Dict, List
 from sqlalchemy import text
-from qdrant_client.http.models import FieldCondition, MatchValue, Filter
+from qdrant_client.http.models import FieldCondition, MatchAny, MatchValue, Filter
 from core.stream import ToolChunk
 from app.tools.websearch_tool import summarize_web
 from app.tools._web_utils import UNTRUSTED_RULE, fence_untrusted
@@ -314,17 +314,20 @@ _CONDITION_LAW_MAP = [
     ({"크레인", "리프트", "달비계", "곤돌라", "양중"},             "산업안전보건기준에관한규칙"),
     ({"밀폐공간", "산소결핍", "유해가스", "환기"},                  "산업안전보건기준에관한규칙"),
     ({"화재", "소화", "피난", "방화", "폭발", "인화"},              "산업안전보건기준에관한규칙"),
-    ({"안전관리자", "보건관리자", "선임", "위탁", "관리감독자"},     "산업안전보건법"),
+    # 선임 인원·자격은 법이 시행령(제16조 → 별표 3 등)에 맡긴다. 법만 좁히면 시행령 조문이
+    # 2위인데도 빠져, 모델이 숫자를 지식으로 채웠다 (#95). 우선 법령은 여러 개일 수 있다.
+    ({"안전관리자", "보건관리자", "선임", "위탁", "관리감독자"},     ("산업안전보건법", "산업안전보건법시행령")),
     ({"중대재해", "경영책임자", "처벌", "징역"},                     "중대재해처벌등에관한법률"),
     ({"재난", "대응", "복구", "위기관리"},                           "재난및안전관리기본법"),
 ]
 
-def get_priority_law(query: str) -> Optional[str]:
-    """키워드 조건에 따라 우선 검색할 법령_norm 반환. 없으면 None."""
+def get_priority_law(query: str) -> Optional[list]:
+    """키워드 조건에 따라 우선 검색할 법령_norm 목록 반환. 없으면 None."""
     q = re.sub(r"\s+", "", query)
-    for keywords, law_norm in _CONDITION_LAW_MAP:
+    for keywords, laws in _CONDITION_LAW_MAP:
         if any(k in q for k in keywords):
-            return normalize_law_name(law_norm)
+            laws = (laws,) if isinstance(laws, str) else laws
+            return [normalize_law_name(l) for l in laws]
     return None
 
 
@@ -396,7 +399,7 @@ async def search_law_articles(query: str) -> LawSearch:
             embedding = await get_embedding_async(expand_legal_terms(query))
             priority_law = get_priority_law(query)
             q_filter = (
-                Filter(must=[FieldCondition(key="law_name_norm", match=MatchValue(value=priority_law))])
+                Filter(must=[FieldCondition(key="law_name_norm", match=MatchAny(any=priority_law))])
                 if priority_law else None
             )
             results = await qdrant.search(COLLECTION, embedding, query_filter=q_filter, limit=10, with_payload=True)
@@ -671,7 +674,8 @@ async def run(plan):
 출력 형식:
 🔹 **결론** (한 문장 요약, 존댓말. 제공된 조문에 답이 없으면 "제공된 조문에서는 확인되지
   않습니다"라고 쓴다 — 제공된 조문은 검색 결과 일부라 "법령에 없다/명시된 바 없다"처럼
-  법령 전체를 부정 단정하지 않는다)
+  법령 전체를 부정 단정하지 않는다. 조문이 "대통령령으로 정한다"·"별표 N과 같다"처럼 다른 규정에 맡기면 수치·인원은 그 규정(시행령·별표)에
+  있다고 밝히고 제공된 조문만으로 숫자를 단정하지 않는다 — 별표는 이 DB에 없다.)
 🔹 **판단 근거** (이 조문이 적용되는 상황 조건·요건 — 조문에 "~하는 경우",
   "~한 때" 등 적용 조건이 명시돼 있으면 반드시 그 조건을 밝혀, 존댓말)
 🔹 **법적 근거**
@@ -765,7 +769,8 @@ async def run(plan):
 아래 조문을 참고해 질문 의도에 맞게 실무 중심으로 답변해.
 
 출력 형식:
-🔹 **결론**
+🔹 **결론** (조문이 "대통령령으로 정한다"·"별표 N과 같다"처럼 다른 규정에 맡기면 수치·인원은 그 규정(시행령·별표)에
+  있다고 밝히고 제공된 조문만으로 숫자를 단정하지 않는다 — 별표는 이 DB에 없다.)
 🔹 **판단 근거** (상황 조건 및 적용 요건)
 🔹 **법적 근거**
   - [법령명] 제X조 제X항: (조문 내용)

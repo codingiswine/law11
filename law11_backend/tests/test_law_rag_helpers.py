@@ -103,6 +103,21 @@ def test_semantic_answer_prompt_forbids_whole_law_negation():
     assert "법령 전체를 부정 단정하지 않는다" in inspect.getsource(law_rag_tool.run)
 
 
+def test_priority_law_for_appointment_questions_includes_the_decree():
+    """#95: 선임 인원은 시행령(별표 3)에 있는데 우선 법령이 산업안전보건법뿐이라 시행령이 빠졌다."""
+    laws = law_rag_tool.get_priority_law("상시근로자 300명이면 안전관리자 몇 명 선임해야 해?")
+    assert laws == ["산업안전보건법", "산업안전보건법시행령"]
+    assert law_rag_tool.get_priority_law("계단 안전 기준은?") == ["산업안전보건기준에관한규칙"]
+    assert law_rag_tool.get_priority_law("오늘 날씨") is None
+
+
+def test_answer_prompts_forbid_filling_delegated_numbers():
+    """#95: 조문이 시행령·별표에 맡긴 수치를 모델이 지식으로 채워 조문 근거처럼 제시했다."""
+    import inspect
+    src = inspect.getsource(law_rag_tool.run)
+    assert src.count("제공된 조문만으로 숫자를 단정하지 않는다") == 2, "Ⓐ·Ⓑ 결론 줄 양쪽에 있어야 한다"
+
+
 def test_expand_legal_terms_noop_without_trigger():
     q = "안전관리자 선임 기준은?"
     assert law_rag_tool.expand_legal_terms(q) == q
