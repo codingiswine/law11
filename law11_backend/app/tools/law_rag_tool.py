@@ -331,6 +331,24 @@ def get_priority_law(query: str) -> Optional[list]:
     return None
 
 
+# ── 후속 질문 검색어 보강 (#96) ─────────────────────────────
+# "그럼 그 측정은 누가 해야 해?"처럼 지시어로 앞 턴을 가리키는 짧은 질문은 그 문장만
+# 임베딩하면 무관한 조문이 올라온다 (실측: 제619조의2 대신 53·184·125·284·189).
+# 이전 대화는 생성 단계에만 들어가고 검색은 현재 문장만 보고 있었다. 직전 사용자
+# 질문을 **임베딩 입력에만** 덧붙인다 — 법령명·조문번호 파싱과 우선 법령은 현재
+# 질문만 본다(앞 턴의 "제38조"가 PG 정확매칭을 가로채면 안 되므로).
+# ponytail: 지시어 목록 + 길이 휴리스틱. 틀리는 사례가 쌓이면 LLM 재작성으로 올린다.
+_FOLLOW_UP_HINT = re.compile(r"(^|\s)(그럼|그러면|그렇다면|그거|그건|그게|그것|그런|이거|이건|저거|거기|그때|그)\s")
+
+
+def prior_user_question(query: str, context: str) -> str:
+    """지시어가 든 짧은 후속 질문이면 직전 사용자 질문을, 아니면 빈 문자열."""
+    if not context or len(query) > 40 or not _FOLLOW_UP_HINT.search(query + " "):
+        return ""
+    prev = [ln[len("사용자: "):].strip() for ln in context.splitlines() if ln.startswith("사용자: ")]
+    return prev[-1] if prev else ""
+
+
 def _prepend_context(context: str, content: str) -> str:
     if not context:
         return content
@@ -370,7 +388,7 @@ class LawSearch:
     steps: List[str] = field(default_factory=list)
 
 
-async def search_law_articles(query: str) -> LawSearch:
+async def search_law_articles(query: str, prior_question: str = "") -> LawSearch:
     """법령 조문 계층형 검색 — 운영과 평가가 반드시 이 함수 하나만 쓴다.
 
     ⚠️ 예전에는 run()과 eval/retriever.py가 검색 우선순위를 각자 구현했고,
@@ -384,6 +402,7 @@ async def search_law_articles(query: str) -> LawSearch:
     """
     law_name = detect_law_name(query)
     article_number = parse_article_number(query)
+    embed_text = f"{prior_question} {query}".strip() if prior_question else query   # #96
     found = LawSearch(
         source="web",
         law_name=law_name,
@@ -396,7 +415,7 @@ async def search_law_articles(query: str) -> LawSearch:
     if not law_name:
         found.steps.append("🧠 [Qdrant] 전체 법령 의미 검색 중...")
         try:
-            embedding = await get_embedding_async(expand_legal_terms(query))
+            embedding = await get_embedding_async(expand_legal_terms(embed_text))
             priority_law = get_priority_law(query)
             q_filter = (
                 Filter(must=[FieldCondition(key="law_name_norm", match=MatchAny(any=priority_law))])
@@ -508,7 +527,7 @@ async def search_law_articles(query: str) -> LawSearch:
     # ③ 법령명만 인식 → 해당 법령 안에서만 의미 검색
     found.steps.append("🧠 [Qdrant] 벡터 검색 중...")
     try:
-        embedding = await get_embedding_async(expand_legal_terms(query))
+        embedding = await get_embedding_async(expand_legal_terms(embed_text))
         q_filter = Filter(must=[FieldCondition(key="law_name_norm", match=MatchValue(value=law_norm))])
         results = (await qdrant.search(COLLECTION, embedding, query_filter=q_filter, limit=10, with_payload=True))[:5]
         # 0.50: 이미 법령명으로 범위를 좁혔는데 여기서도 미달이면
@@ -603,7 +622,7 @@ async def run(plan):
     context = plan.args.get("context", "")
     yield ToolChunk(type="status", payload="⚖️ 법령 검색 시작...")
 
-    found = await search_law_articles(query)
+    found = await search_law_articles(query, prior_user_question(query, context))
     for step in found.steps:
         yield ToolChunk(type="status", payload=step)
 

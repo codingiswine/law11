@@ -15,6 +15,7 @@ eval_multiturn.py — 멀티턴 회귀 eval
 판정:
     - expect_any: 마지막 턴 답변에 키워드 중 하나라도 포함돼야 통과
     - forbid_any: 마지막 턴 답변에 키워드가 하나라도 있으면 실패 (#93)
+    - expect_retrieved_any: 마지막 턴의 검색 조문(source 청크) 번호 중 하나라도 있어야 통과 (#96)
       (이전 턴의 주제를 이어받았는지 확인)
     - expect_tool / forbid_tool: 마지막 턴이 chat_history metadata->>'tool'에
       기록한 단축 tool 이름 검사 (라우팅 회귀 확인)
@@ -114,12 +115,23 @@ SCENARIOS = [
         "expect_any": ["별표", "시행령", "대통령령"],   # 위임 규정을 가리키면 통과
         "forbid_any": ["1명"],
     },
+    {
+        # 지시어 후속 질문은 검색도 앞 턴을 알아야 한다 — 답변 텍스트가 아니라 **검색 조문**을 본다.
+        "id": "MT-008",
+        "bug": "(#96) 후속 질문을 현재 문장만으로 임베딩해 무관한 조문(53·184·125…)을 검색",
+        "turns": [
+            "밀폐공간 작업 전 적정 공기 산소농도 기준이 뭐야?",
+            "그럼 그 측정은 누가 해야 해?",
+        ],
+        "expect_retrieved_any": ["619의2"],
+    },
 ]
 
 
-async def ask(client: httpx.AsyncClient, session_id: str, question: str) -> str:
-    """SSE 스트림을 끝까지 읽어 text 청크만 이어붙인 답변 반환."""
+async def ask(client: httpx.AsyncClient, session_id: str, question: str) -> tuple[str, list]:
+    """SSE 스트림을 끝까지 읽어 (답변 텍스트, 검색 조문 번호 목록) 반환."""
     parts = []
+    retrieved: list = []
     async with client.stream(
         "POST", API_URL,
         json={"user_id": "eval_multiturn", "question": question, "session_id": session_id},
@@ -135,7 +147,9 @@ async def ask(client: httpx.AsyncClient, session_id: str, question: str) -> str:
                 continue
             if msg.get("event") == "text":
                 parts.append(msg["payload"])
-    return "".join(parts)
+            elif msg.get("event") == "source" and isinstance(msg.get("payload"), dict):
+                retrieved = [a.get("article_number") for a in msg["payload"].get("retrieved_laws", [])]
+    return "".join(parts), retrieved
 
 
 async def last_tool(session_id: str) -> str:
@@ -165,10 +179,10 @@ async def purge_eval_sessions() -> None:
 
 async def run_scenario(sc: dict) -> dict:
     session_id = f"eval-mt-{uuid.uuid4()}"
-    answer = ""
+    answer, retrieved = "", []
     async with httpx.AsyncClient() as client:
         for q in sc["turns"]:
-            answer = await ask(client, session_id, q)
+            answer, retrieved = await ask(client, session_id, q)
             # 턴 저장 완료 여유 + 레이트리밋 간격: /api/ask는 IP당 10/분(#65)이라
             # 시나리오 6개(11턴)를 연달아 보내면 마지막 턴이 429로 끊긴다 (실측, #93).
             await asyncio.sleep(6.5)
@@ -179,6 +193,8 @@ async def run_scenario(sc: dict) -> dict:
     hit = [k for k in sc.get("forbid_any", []) if k in answer]
     if hit:
         failures.append(f"답변에 금지 문구 {hit}")
+    if "expect_retrieved_any" in sc and not any(k in retrieved for k in sc["expect_retrieved_any"]):
+        failures.append(f"검색 조문 {retrieved}에 {sc['expect_retrieved_any']} 중 아무것도 없음")
     if "expect_tool" in sc or "forbid_tool" in sc:
         tool = await last_tool(session_id)
         if sc.get("expect_tool") and tool != sc["expect_tool"]:
