@@ -17,7 +17,7 @@
 # 주의: pip check는 instructor/scipy 경고를 낸다. 평가 경로는 두 패키지를
 # 타지 않으므로 무시해도 되지만, 운영 venv에 섞어 설치하지 말 것.
 
-ragas==0.1.21
+ragas==0.4.3
 
 # ragas 0.1.21이 요구하는 계열 — 최신으로 올라가면 import가 깨진다
 #   ragas>=0.2  : ragas.llms.prompt 제거 → harness.py의 #40 패치 불가
