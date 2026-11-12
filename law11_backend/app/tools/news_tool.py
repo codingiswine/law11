@@ -15,7 +15,7 @@ from typing import List, Dict, AsyncGenerator
 from urllib.parse import urlparse
 from app.config import settings
 from core.stream import ToolChunk
-from app.tools._web_utils import strip_tags, unique_preserve_order
+from app.tools._web_utils import UNTRUSTED_RULE, fence_untrusted, strip_tags, unique_preserve_order
 
 
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID")
@@ -128,7 +128,8 @@ def build_prompt(query: str, items: List[Dict[str, str]]) -> str:
         f"- 제목: {i['title']}\n  매체: {i['source']}\n  날짜: {i.get('pubDate','')}\n  링크: {i['link']}\n  내용: {i.get('description','')}"
         for i in items
     ])
-    return header + "\n[기사 데이터]\n" + context
+    # 기사 본문은 제3자 텍스트 — 울타리 안에 가둔다 (#64의 방어가 이 툴은 비켜갔다, #84)
+    return header + "\n" + fence_untrusted(context, "기사 데이터")
 
 
 # ─────────────────────────────
@@ -153,7 +154,10 @@ async def run(plan) -> AsyncGenerator[ToolChunk, None]:
     prompt = build_prompt(query, items)
     stream = await settings.openai_client.chat.completions.create(
         model=settings.LLM_MODEL,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[
+            {"role": "system", "content": "너는 산업안전보건 뉴스를 요약하는 어시스턴트다.\n" + UNTRUSTED_RULE},
+            {"role": "user", "content": prompt},
+        ],
         temperature=0.3,
         stream=True,
     )
