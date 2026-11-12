@@ -1,7 +1,6 @@
 import re
 import unicodedata
 from typing import Dict, Optional
-from openai import AsyncOpenAI
 from core.logger import law11_logger as logger
 from sqlalchemy import text
 
@@ -24,7 +23,9 @@ _LLM_SYSTEM = """너는 Law11 법령 챗봇의 질문 라우터다.
 
 도구 이름만 출력해. 다른 설명은 금지."""
 
-_llm_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+# ⚠️ 예전엔 여기서 AsyncOpenAI(api_key=...)를 따로 만들었다 — CLAUDE.md "세 클라이언트는 settings에서만"
+# 위반이고, project=OPENAI_PROJECT_ID와 타임아웃이 빠져 라우터 호출만 프로젝트 밖으로 과금되고
+# SDK 기본 10분 타임아웃을 탔다 (#88). settings.openai_client 하나를 쓴다.
 _llm_cache: Dict[str, str] = {}
 
 # ── Fast-path 키워드
@@ -87,8 +88,9 @@ async def _classify_with_llm(question: str, history: str) -> str:
 
     context = f"이전 대화:\n{history}\n\n질문: {question}" if history.strip() else question
     try:
-        resp = await _llm_client.chat.completions.create(
+        resp = await settings.openai_client.chat.completions.create(
             model=settings.LLM_MODEL,
+            timeout=settings.GPT_TIMEOUT_SECONDS,
             messages=[{"role": "system", "content": _LLM_SYSTEM}, {"role": "user", "content": context}],
             temperature=0,
             max_tokens=10,

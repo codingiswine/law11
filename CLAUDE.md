@@ -90,7 +90,7 @@ RAG 검색 우선순위는 반드시 이 순서를 따른다:
 
 ### 설정 변경 규칙
 
-- `app/config/settings.py`에서 `openai_client`, `qdrant_client`, `async_engine`을 생성한다. 다른 파일에서 이 세 클라이언트를 **새로 생성하지 않는다** — `settings.*`로 가져다 쓴다.
+- `app/config/settings.py`에서 `openai_client`, `qdrant_client`, `async_engine`을 생성한다. 다른 파일에서 이 세 클라이언트를 **새로 생성하지 않는다** — `settings.*`로 가져다 쓴다. `tests/test_single_client_rule.py`가 소스를 훑어 강제한다(#88). 예외는 주간 배치 두 파일(`law_updater_async.py`, `case_law_updater_async.py`)만이며 테스트에 이유와 함께 적혀 있다.
 - `.env` 파일 경로: Docker는 `/app/.env`, 로컬은 `law11_backend/.env`. `ENV_PATH` 자동 감지 로직을 손대지 않는다.
 - Qdrant 컬렉션명은 `.env`의 `QDRANT_COLLECTION_NAME`으로만 제어한다. 코드에 `"laws"` 하드코딩 금지.
 

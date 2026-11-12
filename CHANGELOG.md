@@ -1,7 +1,7 @@
 # Law11 Changelog
 
 루트 [README.md](README.md)에서 옮겨온 발견·수정 이력입니다. 형식: **증상 → 근본 원인 → 실측 검증**.
-번호(#1~#87)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
+번호(#1~#88)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
 
 ## 목차
 
@@ -92,6 +92,7 @@
 - [85. 1초 안에 두 번 저장되면 질문-답변 짝이 교차됐다 v1.18.5](#85-1초-안에-두-번-저장되면-질문-답변-짝이-교차됐다-v1185)
 - [86. 법령 갱신 Task를 버리고 있었다 — GC·예외 미관측·중복 실행 v1.18.6](#86-법령-갱신-task를-버리고-있었다--gc예외-미관측중복-실행-v1186)
 - [87. 요청마다 동기 디스크 I/O가 이벤트 루프를 세우고 있었다 v1.18.7](#87-요청마다-동기-디스크-io가-이벤트-루프를-세우고-있었다-v1187)
+- [88. 라우터가 두 번째 OpenAI 클라이언트를 만들어 쓰고 있었다 — 규칙은 있었지만 지키는 코드가 없었다 v1.18.8](#88-라우터가-두-번째-openai-클라이언트를-만들어-쓰고-있었다--규칙은-있었지만-지키는-코드가-없었다-v1188)
 - [P1. 조문 본문의 항·호 번호 중복 + 인용 배지 순서/점수 불일치 2c8097e](#p1-조문-본문의-항호-번호-중복--인용-배지-순서점수-불일치-2c8097e)
 - [P2. 스트림 완료 콜백 경합 + confidence_score 불일치 764b646](#p2-스트림-완료-콜백-경합--confidence_score-불일치-764b646)
 - [P3. 웹 폴백 인용의 "0%" 관련도 배지 ffdcb2f](#p3-웹-폴백-인용의-0-관련도-배지-ffdcb2f)
@@ -1913,6 +1914,20 @@ mutation test 3회로 두 조건이 각각 **유일한 방어선**임을 확인�
 **수정**: 세 호출을 `await asyncio.to_thread(...)`로 감쌌다. 새 추상화 없음 — 업데이터와 같은 패턴. 캐시 DB를 비동기 드라이버로 바꾸는 건 하지 않았다: 호출 횟수가 요청당 ≤2이고, 스레드 풀로 빼는 것만으로 루프는 자유로워진다.
 
 **검증 — "루프가 안 막힌다"를 직접 잰다**: `tests/test_event_loop_not_blocked.py` 2개. I/O 함수를 0.2초 `time.sleep`으로 바꿔 놓고 옆에서 10ms 틱 카운터를 돌린다. 루프가 자유로우면 ~20틱, 막히면 0~1틱. mutation test: 임베딩 조회를 동기로 되돌리면 `ticks=0` 실패, 로그 append를 되돌리면 `ticks=0` 실패. `pytest` 213 collected (212 passed + 설계상 skip 1).
+
+### 88. 라우터가 두 번째 OpenAI 클라이언트를 만들어 쓰고 있었다 — 규칙은 있었지만 지키는 코드가 없었다 `v1.18.8`
+
+**증상**: `question_router.py:27`이 `_llm_client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)`로 자기 클라이언트를 만들었다. `CLAUDE.md` 설정 변경 규칙 — "`openai_client`·`qdrant_client`·`async_engine`은 settings.py에서만 생성한다" — 의 정면 위반이다. 결과는 두 가지: `project=OPENAI_PROJECT_ID`가 빠져 **라우터 분류 호출만 OpenAI 프로젝트 밖으로 과금**됐고, `GPT_TIMEOUT_SECONDS`(60초) 대신 SDK 기본 **10분** 타임아웃을 탔다 — settings.py가 주석으로 명시적으로 거부한 값이다.
+
+**왜 남아 있었나**: 규칙은 문서에만 있었다. #51·#60·#76이 보여준 것과 같은 패턴이다 — 사람이 기억하는 규칙은 다음 사람이(또는 다음 주의 내가) 잊는다. 그래서 규칙을 테스트로 옮겼다.
+
+**수정**: 라우터는 `settings.openai_client`를 쓰고 `timeout=settings.GPT_TIMEOUT_SECONDS`를 넘긴다. `from openai import AsyncOpenAI`는 고아가 되어 제거.
+
+**규칙을 코드로**: `tests/test_single_client_rule.py`가 `app/`·`core/`의 모든 `.py`에서 `AsyncOpenAI(` `AsyncQdrantClient(` `QdrantClient(` `create_async_engine(` 호출을 찾아, `settings.py` 밖에 있으면 실패한다. 예외 두 파일은 이름을 적어 뒀다 — `law_updater_async.py`·`case_law_updater_async.py`는 요청 경로가 아닌 **주간 배치**로, 실행마다 클라이언트를 열고 닫고 Qdrant는 일괄 upsert용 동기 클라이언트(`timeout=120`)를 쓴다. settings.*로 옮기려면 그 수명 주기를 다시 설계해야 해서 이 항목 범위 밖으로 뒀다. 예외는 숨기지 않고 테스트 상단에 이유와 함께 적었다.
+
+**검증**: 2개 — (a) 위 소스 규칙, (b) `_classify_with_llm`이 `settings.openai_client`를 타며 `timeout`을 넘기는지. mutation test: 자체 클라이언트 줄을 되살리면 (a)가 `question_router.py:30`을 지목해 실패, `timeout=`을 지우면 (b) 실패. `pytest` 215 collected (214 passed + 설계상 skip 1).
+
+**남은 과제**: 두 업데이터의 클라이언트 생성을 settings로 모을지는 별도 판단. 지금은 "요청 경로는 단일 클라이언트, 배치는 자기 수명 주기"가 명시된 상태다.
 
 ---
 
