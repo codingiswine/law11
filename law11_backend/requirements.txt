@@ -27,7 +27,7 @@ greenlet>=3.0.0              # SQLAlchemy async 브리지. Linux 컨테이너에
 openai>=1.99.9,<2.0.0
 langchain==0.3.27
 langchain-core>=0.3.75,<1.0.0
-langchain-openai==0.3.32
+langchain-openai==1.7.4
 langgraph==0.2.60
 
 # ────────────────────────────────────────────
