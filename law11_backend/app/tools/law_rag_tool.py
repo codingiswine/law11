@@ -161,6 +161,8 @@ WEB_SYSTEM_PROMPT = ("""너는 대한민국 법령 전문가 AI 어시스턴트�
 [금지 사항]
 - 근거 없이 수치나 조건을 임의로 생성하는 것 금지
 - "일반적으로", "보통은" 등으로 포장해 확인되지 않은 내용을 추가하는 것 금지
+- 조문 원문을 따옴표로 직접 인용하는 것 금지 — 웹 검색 결과는 요약·기사이지 조문 원문이
+  아니다. 따옴표 안에 넣으면 요약문이 원문으로 둔갑한다 (#94)
 """
     + UNTRUSTED_RULE
 )
@@ -528,6 +530,14 @@ async def search_law_articles(query: str) -> LawSearch:
     return found
 
 
+# 웹 경로 답변 머리에 코드가 직접 붙이는 안내 — 모델에게 맡기면 빠뜨리고, 프론트에
+# 배지를 달면 meta 청크를 SSE로 흘려야 한다(금지, CLAUDE.md). 본문 텍스트가 가장 싸고 확실하다 (#94).
+WEB_SCOPE_NOTICE = (
+    "> ⚠️ **수록 법령 범위 밖** — 이 답변은 웹 검색 결과를 바탕으로 작성됐습니다. "
+    "조문 원문은 법제처(law.go.kr)에서 확인하십시오.\n\n"
+)
+
+
 async def _answer_from_web(query: str, context: str, is_direct_article_query: bool):
     """조문 검색 실패 시 웹 검색으로 보완. 운영 두 경로가 쓰던 동일 블록을 합친 것."""
     web_result = await summarize_web(query, context=context)
@@ -547,8 +557,10 @@ async def _answer_from_web(query: str, context: str, is_direct_article_query: bo
             {"role": "system", "content": WEB_SYSTEM_PROMPT},
             {"role": "user", "content": _prepend_context(context, f"""질문: {query}
 
-아래 검색 결과를 참고해 반드시 구체적인 조문 번호(제X조 제X항)를 인용하여 답변해.
+아래 검색 결과를 참고해 구체적인 조문 번호(제X조 제X항)를 명시하여 답변해.
 법령명만 나열하지 말고, 해당 조문이 무엇을 규정하는지 내용과 함께 명시해.
+⚠️ 조문 원문을 따옴표로 인용하지 마 — 검색 결과는 요약이지 원문이 아니다. 규정 내용은
+   설명문으로 쓰고, 각 법적 근거 끝에 "(웹 검색 기준, 원문 확인 필요)"를 붙여.
 
 [검색 결과]
 {fence_untrusted(web_result.get("summaries", ""), "웹 검색 요약")}
@@ -557,13 +569,14 @@ async def _answer_from_web(query: str, context: str, is_direct_article_query: bo
 🔹 **결론** (한 문장 요약)
 🔹 **판단 근거** (상황 조건 및 적용 요건)
 🔹 **법적 근거**
-  - [법령명] 제X조 제X항: (해당 조문이 규정하는 내용)
+  - [법령명] 제X조 제X항: (규정 내용을 설명문으로, 따옴표 없이) (웹 검색 기준, 원문 확인 필요)
 🔹 **적용 방법** (제공된 조문에 명시된 사항만 정리 — 조문에 없는 일반적 안전관리 조언은 쓰지 마)
 🔹 **출처** (법령명 + 조문번호)""")},
         ],
         temperature=0.2,
     )
     answer = resp.choices[0].message.content.strip()
+    yield ToolChunk(type="text", payload=WEB_SCOPE_NOTICE)
     yield ToolChunk(type="meta", payload={
         "query_type": "direct_article" if is_direct_article_query else "semantic",
         "selected_source": "web",
