@@ -583,9 +583,27 @@ WEB_SCOPE_NOTICE = (
     "> ⚠️ **수록 법령 범위 밖** — 이 답변은 웹 검색 결과를 바탕으로 작성됐습니다. "
     "조문 원문은 법제처(law.go.kr)에서 확인하십시오.\n\n"
 )
+# 검색은 됐지만 그 조문들에 답이 없어 웹으로 넘어간 경우 — 범위 밖이 아니라 검색 누락이다 (#98)
+WEB_MISS_NOTICE = (
+    "> ⚠️ **검색된 조문에 답이 없음** — 웹 검색 결과로 보완한 답변입니다. "
+    "조문 원문은 법제처(law.go.kr)에서 확인하십시오.\n\n"
+)
+
+# ── 미확인 인정 → 웹 폴백 (#98) ─────────────────────────────
+# 검색이 빈손이면 웹으로 가면서, 조문 5개가 왔는데 답이 없을 때는 "확인되지 않습니다"에서
+# 멈추고 있었다. 모델이 미확인을 인정한 경우에만 웹으로 보낸다 — 빈손 검색과 같은 원칙.
+# 결론은 보낸 뒤 되돌릴 수 없으므로 "판단 근거" 표시가 나올 때까지만 버퍼해 판정한다.
+_CONCLUSION_MISS = re.compile(r"확인되지 않|확인할 수 없|확인되지 아니")
+_HEAD_MARK = "판단 근거"
 
 
-async def _answer_from_web(query: str, context: str, is_direct_article_query: bool):
+def conclusion_admits_miss(head: str) -> bool:
+    """결론 구간(판단 근거 앞)이 '제공된 조문에서 확인되지 않음'인가."""
+    return bool(_CONCLUSION_MISS.search(head.split(_HEAD_MARK)[0]))
+
+
+async def _answer_from_web(query: str, context: str, is_direct_article_query: bool,
+                           notice: str = WEB_SCOPE_NOTICE):
     """조문 검색 실패 시 웹 검색으로 보완. 운영 두 경로가 쓰던 동일 블록을 합친 것."""
     web_result = await summarize_web(query, context=context)
     # ⚠️ 검색 결과가 하나도 없으면 GPT 생성 자체를 중단한다. 장애 주입 실측:
@@ -623,7 +641,7 @@ async def _answer_from_web(query: str, context: str, is_direct_article_query: bo
         temperature=0.2,
     )
     answer = resp.choices[0].message.content.strip()
-    yield ToolChunk(type="text", payload=WEB_SCOPE_NOTICE)
+    yield ToolChunk(type="text", payload=notice)
     yield ToolChunk(type="meta", payload={
         "query_type": "direct_article" if is_direct_article_query else "semantic",
         "selected_source": "web",
@@ -697,7 +715,7 @@ async def run(plan):
         combined = "\n\n".join(
             f"[{a['law_name']} {article_display(a['article_number'])}]\n{a['text']}" for a in found.articles
         )
-        yield ToolChunk(type="meta", payload={
+        meta = ToolChunk(type="meta", payload={
             "query_type": "semantic",
             "selected_source": "qdrant",
             "selected_articles": [f"{a['law_name']} {article_display(a['article_number'])}" for a in found.articles],
@@ -705,7 +723,7 @@ async def run(plan):
             "fallback_used": False,
             "confidence_score": found.articles[0]["score"] if found.articles else None,
             "tool": "law_rag_tool",
-        })
+        })   # 결론 판정 뒤에 보낸다 — 웹으로 넘어가면 웹 경로의 meta만 남아야 한다 (#98)
 
         prompt = f"""너는 대한민국 산업안전보건 법령 전문가야.
 사용자 질문: "{query}"
@@ -719,7 +737,11 @@ async def run(plan):
 🔹 **결론** (한 문장 요약, 존댓말. 제공된 조문에 답이 없으면 "제공된 조문에서는 확인되지
   않습니다"라고 쓴다 — 제공된 조문은 검색 결과 일부라 "법령에 없다/명시된 바 없다"처럼
   법령 전체를 부정 단정하지 않는다. 조문이 "대통령령으로 정한다"·"별표 N과 같다"처럼 다른 규정에 맡기면 수치·인원은 그 규정(시행령·별표)에
-  있다고 밝히고 제공된 조문만으로 숫자를 단정하지 않는다 — 별표는 이 DB에 없다.)
+  있다고 밝히고 제공된 조문만으로 숫자를 단정하지 않는다 — 별표는 이 DB에 없다.
+  질문이 가리키는 법령·대상에 해당하는 조문이 없으면 다른 법령·다른 대상의 조문이나 수치로
+  대신하지 않는다 — 예: 근로자 교육 시간을 경영책임자 교육 조문으로, 산업안전보건법 위반 처벌을
+  재난법 벌칙으로 답하지 않는다. 처벌·결과가 항·목으로 갈리면 질문의 사실관계(사망·부상·질병 등)가
+  해당하는 분기만 결론에 쓴다.)
 🔹 **판단 근거** (이 조문이 적용되는 상황 조건·요건 — 조문에 "~하는 경우",
   "~한 때" 등 적용 조건이 명시돼 있으면 반드시 그 조건을 밝혀, 존댓말)
 🔹 **법적 근거**
@@ -739,12 +761,44 @@ async def run(plan):
             temperature=0.2,
             stream=True,
         )
-        answer_parts = []
+        # ponytail: 재검색 단계는 뺐다 — 미확인 사례의 정답(중대재해법 제3조)이 벡터 15위 밖이라
+        # 같은 검색을 다시 해도 못 찾는다. 키워드 검색이 생기면 웹 앞에 끼운다.
+        answer_parts, head, head_done, missed = [], [], False, False
         async for chunk in stream:
             delta = chunk.choices[0].delta.content
-            if delta:
+            if not delta:
+                continue
+            if head_done:
                 answer_parts.append(delta)
                 yield ToolChunk(type="text", payload=delta)
+                continue
+            head.append(delta)
+            joined = "".join(head)
+            if _HEAD_MARK in joined or len(joined) > 300:
+                head_done = True
+                if conclusion_admits_miss(joined):
+                    missed = True
+                    break
+                yield meta
+                answer_parts.append(joined)
+                yield ToolChunk(type="text", payload=joined)
+        if not head_done:   # 판단 근거 표시 없이 끝난 짧은 답
+            joined = "".join(head)
+            if conclusion_admits_miss(joined):
+                missed = True
+            else:
+                yield meta
+                answer_parts.append(joined)
+                yield ToolChunk(type="text", payload=joined)
+        if missed:
+            try:
+                await stream.close()
+            except Exception:
+                pass
+            yield ToolChunk(type="status", payload="🔁 검색된 조문에 답이 없음 → Web 검색으로 보완")
+            async for c in _answer_from_web(query, context, is_direct_article_query, notice=WEB_MISS_NOTICE):
+                yield c
+            return
 
         # ⚠️ 프롬프트 지시("빠짐없이 인용")만으로는 GPT가 가끔 검색된 조문
         # 일부를 답변에서 빠뜨린다 (실측 확인, 2026-09-05 — 5개 중 2개
