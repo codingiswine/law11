@@ -77,7 +77,7 @@ curl http://localhost:8000/api/history/stats
 
 ### `GET /api/dashboard` — 운영 모니터링 대시보드 (HTML)
 
-브라우저에서 <http://localhost:8000/api/dashboard> 접속. 자세한 내용은 [운영 모니터링](ops.md) 참고.
+브라우저에서 <http://localhost:8000/api/dashboard> 접속. Tool 사용 통계(`/api/history/stats`)만 보여준다 — 대화 본문 목록은 #81(세션 범위)과 #91(저장형 XSS 제거)로 뺐다. 자세한 내용은 [운영 모니터링](ops.md) 참고.
 
 ### `POST /api/ask-multi` — LangGraph 멀티 에이전트 + Self-RAG (실험적, SSE)
 

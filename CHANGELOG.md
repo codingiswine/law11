@@ -1,7 +1,7 @@
 # Law11 Changelog
 
 루트 [README.md](README.md)에서 옮겨온 발견·수정 이력입니다. 형식: **증상 → 근본 원인 → 실측 검증**.
-번호(#1~#90)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
+번호(#1~#91)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
 
 ## 목차
 
@@ -95,6 +95,7 @@
 - [88. 라우터가 두 번째 OpenAI 클라이언트를 만들어 쓰고 있었다 — 규칙은 있었지만 지키는 코드가 없었다 v1.18.8](#88-라우터가-두-번째-openai-클라이언트를-만들어-쓰고-있었다--규칙은-있었지만-지키는-코드가-없었다-v1188)
 - [89. 실험 경로(/ask-multi)의 배선 결함 넷 — 판례 미연결·context 유실·매 요청 compile·채점 컨텍스트 불일치 v1.18.9](#89-실험-경로ask-multi의-배선-결함-넷--판례-미연결context-유실매-요청-compile채점-컨텍스트-불일치-v1189)
 - [90. 운영·설정 위생 여섯 — 문서가 가리키던 의존성 파일은 옛것이었다 v1.19.0](#90-운영설정-위생-여섯--문서가-가리키던-의존성-파일은-옛것이었다-v1190)
+- [91. 보안 점검 — 대시보드 저장형 XSS, 보안 헤더 부재, 의존성 취약점 실측 v1.19.1](#91-보안-점검--대시보드-저장형-xss-보안-헤더-부재-의존성-취약점-실측-v1191)
 - [P1. 조문 본문의 항·호 번호 중복 + 인용 배지 순서/점수 불일치 2c8097e](#p1-조문-본문의-항호-번호-중복--인용-배지-순서점수-불일치-2c8097e)
 - [P2. 스트림 완료 콜백 경합 + confidence_score 불일치 764b646](#p2-스트림-완료-콜백-경합--confidence_score-불일치-764b646)
 - [P3. 웹 폴백 인용의 "0%" 관련도 배지 ffdcb2f](#p3-웹-폴백-인용의-0-관련도-배지-ffdcb2f)
@@ -1966,6 +1967,31 @@ mutation test 3회로 두 조건이 각각 **유일한 방어선**임을 확인�
 **검증 — 규칙을 테스트로**: `tests/test_ops_hygiene.py` 5개. (a) 코드의 `os.getenv` 키 전부가 `.env.example`에 있는지(주석 처리 포함), (b) `init.sql`에 GRANT가 없는지, (c) 0.0이 0.0으로 기록되는지(tmp 디렉터리), (d) 파일 핸들러가 자정 회전이고 날짜 폴더 아래가 아닌지, (e) 다섯 문서가 가리키는 eval 의존성 경로가 실제로 존재하는지. mutation test: `.env.example`에서 키 하나를 지우면 (a)가 그 키 이름으로 실패, `if confidence_score`로 되돌리면 (c) 실패. (e)는 작성 직후 **내가 쓴 문장 속 옛 경로**까지 잡아내 문구를 고치게 했다 — 테스트가 작성자부터 걸러낸 셈. `pytest` 224 collected (223 passed + 설계상 skip 1).
 
 **하지 않은 것**: `qdrant/qdrant:latest` 고정. 지금 `qdrant_storage/`에 저장 포맷을 쓴 서버 버전을 알 수 없고(Docker 데몬이 내려가 있어 확인 불가), 모르는 버전으로 고정하면 다음 `up`에서 저장소 호환이 깨질 수 있다. 데몬이 올라오면 `docker compose exec qdrant ./qdrant --version`으로 확인한 뒤 그 버전으로 고정할 것. 또 `init.sql`의 `uuid-ossp` 확장은 쓰는 컬럼이 없는 죽은 코드지만 이 항목 범위 밖이라 두었다.
+
+### 91. 보안 점검 — 대시보드 저장형 XSS, 보안 헤더 부재, 의존성 취약점 실측 `v1.19.1`
+
+#81~#90 코드 점검을 끝내고 **보안만 따로** 봤다. 세 축 — (a) 외부 텍스트가 모델·브라우저에 닿는 모든 지점을 손으로 추적, (b) 의존성 취약점을 도구로 실측(`pip-audit`, `npm audit`), (c) #81~#90의 diff 자체를 별도 리뷰어가 독립 점검. 결과는 **고친 것 셋, 고치지 않고 적어 둔 것 하나, 이상 없음 여섯**이다.
+
+**고친 것 ① 저장형 XSS — `/api/dashboard`.** 서버가 내려주는 HTML 페이지가 `/api/history`의 **대화 본문**(`h.content` — 사용자 질문과 AI 답변 원문)과 `tool`·`err.message`를 템플릿 문자열로 `innerHTML`에 그대로 꽂았다. 질문창에 `<img src=x onerror=…>`를 치면 DB에 저장되고, **대시보드를 여는 누구의 브라우저에서나 실행**된다 — 운영자가 열어 보는 페이지라 피해자가 운영자다. 왜 지금껏 없었나: 프론트는 React + `react-markdown`(`rehype-raw` 없음)이라 안전했고, 이 페이지만 **백엔드가 손으로 쓴 HTML**이어서 프레임워크 보호 밖이었다. #81 뒤로 이 목록은 어차피 비어 있었다(`session_ids` 없이 호출). 본문 목록을 제거하고 남은 통계 필드는 전부 `esc()`를 거친다.
+
+**고친 것 ② 보안 응답 헤더 전무 — 프론트 nginx.** `X-Content-Type-Options`·`X-Frame-Options`·`Referrer-Policy`·`Content-Security-Policy`가 없었다. CSP는 `script-src 'self'`(인라인 스크립트 차단 — XSS가 들어와도 실행 경로를 막는 두 번째 벽), `frame-ancestors 'none'`, Google Fonts 허용, `connect-src`는 백엔드 호스트가 빌드 시점 값(`VITE_API_URL`)이라 스킴만 제한. nginx의 `add_header`는 location에 하나라도 있으면 상위 것을 **상속하지 않으므로**(Cache-Control을 거는 location이 둘) 스니펫 파일로 빼서 세 곳에서 include한다. ⚠️ Docker 데몬이 내려가 있어 `nginx -t`로 **실행 검증은 못 했다** — 다음 `docker compose up --build`에서 프론트 컨테이너 기동과 콘솔의 CSP 위반 로그를 확인할 것.
+
+**고친 것 ③ npm 취약점 19 → 9.** `npm audit fix`(비파괴)로 critical 1·high 11이 0이 됐다. 남은 moderate 9는 전부 **빌드 도구 체인**(postcss-selector-parser·mdast-util-to-hast 등)으로 브라우저에 배포되는 번들이 아니며, 고치려면 `--force`(의존성 메이저 교체)가 필요해 두었다. 빌드 통과 확인.
+
+**고치지 않고 적어 둔 것 — pip 취약점 20건(8패키지).**
+
+| 패키지 | 현재 | 건수 | 해소 버전 |
+|---|---|---|---|
+| starlette (fastapi 0.115.5가 끌어옴) | 0.41.3 | 7 | ≥1.3.1 |
+| langgraph-checkpoint / langgraph-sdk | 2.1.2 / 0.1.74 | 3 / 3 | ≥4.1.1 / ≥0.4.4 |
+| langchain / -core / -openai / -text-splitters | 0.3.x | 2 / 2 / 1 / 1 | 1.x 계열 |
+| langgraph | 0.2.60 | 2 | ≥1.0.10 |
+
+starlette는 **fastapi 메이저 상향**이, langchain·langgraph는 **1.x 마이그레이션**이 필요하다. 후자는 `eval/harness.py`가 ragas 0.1.21 ↔ langchain 0.2 핀에 묶여 있어(#69) 평가 환경과 같이 움직여야 한다. 둘 다 이 항목에서 할 일이 아니라 **별도 결정**이고, 숫자를 적어 두는 것이 이 항목의 역할이다. #67의 "63건 → 21건"에서 1건이 더 줄어 20건이다 — 줄어든 것이 아니라 공시가 바뀐 것이니 추세로 읽지 말 것.
+
+**이상 없음(확인한 것)**: 외부 텍스트가 프롬프트에 들어가는 지점 4곳(websearch·law_rag 웹 폴백·news·blog) 전부 울타리 통과(#64·#84) — LLM 호출 12곳 중 나머지는 사용자 입력만 받음 · 외부 호출은 Naver·Tavily 고정 URL뿐(SSRF 없음) · SQL은 전부 바인드(f-string 0건) · 로그에 키·비밀번호 없음 · `.env` 미추적, 추적 파일에 시크릿 없음 · 관리자 엔드포인트 fail-closed + 상수 시간 비교 · 독립 리뷰어의 #81~#90 diff 점검 결과 "신규 취약점 없음". 공개 상태인 `/api/metrics`·`/api/history/stats`는 사용량·툴명·평균 점수를 노출하지만 개인정보가 아니라 두었다.
+
+**검증**: `tests/test_dashboard_no_html_injection.py` 1개 — 대시보드 HTML에 `/api/history` 호출과 `h.content`가 없고, `innerHTML` 템플릿의 `${…}` 중 서버 필드(`s.`·`h.`·`err.`·`data.`)가 전부 `esc(`를 거치는지. mutation test: `${esc(s.tool…)}`를 `${s.tool…}`로 되돌리면 그 필드 이름을 지목해 실패. `pytest` 225 collected (224 passed + 설계상 skip 1).
 
 ---
 

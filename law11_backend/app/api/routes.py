@@ -430,19 +430,13 @@ async def dashboard():
             </div>
         </div>
 
-        <!-- Chat History -->
-        <div>
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">💭 최근 대화</h2>
-            <div id="history" class="space-y-4">
-                <div class="bg-white p-6 rounded-lg shadow-md animate-pulse">
-                    <div class="h-4 bg-gray-200 rounded w-full mb-2"></div>
-                    <div class="h-4 bg-gray-200 rounded w-5/6"></div>
-                </div>
-            </div>
-        </div>
+        <!-- 대화 본문 목록은 없다 (#81: 세션 범위 밖 조회 불가 · #91: 본문을 innerHTML에 넣던 저장형 XSS 제거) -->
     </div>
 
     <script>
+        // 서버 데이터는 전부 이 함수를 거쳐 innerHTML에 들어간다 (#91)
+        const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
         // Tool 색상 매핑
         const toolColors = {
             'law': 'bg-blue-100 text-blue-800',
@@ -464,12 +458,12 @@ async def dashboard():
                         <div class="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow">
                             <div class="flex items-center justify-between mb-4">
                                 <span class="inline-block px-3 py-1 rounded-full text-sm font-semibold ${colorClass}">
-                                    ${s.tool || 'unknown'}
+                                    ${esc(s.tool || 'unknown')}
                                 </span>
                             </div>
-                            <div class="text-3xl font-bold text-gray-800 mb-2">${s.count}회</div>
-                            <div class="text-sm text-gray-600 mb-1">평균 품질: ${s.avg_score}점</div>
-                            <div class="text-xs text-gray-500">마지막: ${lastUsed}</div>
+                            <div class="text-3xl font-bold text-gray-800 mb-2">${esc(s.count)}회</div>
+                            <div class="text-sm text-gray-600 mb-1">평균 품질: ${esc(s.avg_score)}점</div>
+                            <div class="text-xs text-gray-500">마지막: ${esc(lastUsed)}</div>
                         </div>
                     `;
                 }).join('');
@@ -477,61 +471,7 @@ async def dashboard():
             .catch(err => {
                 document.getElementById('stats').innerHTML = `
                     <div class="col-span-full bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                        ⚠️ 통계 로드 실패: ${err.message}
-                    </div>
-                `;
-            });
-
-        // 대화 기록 로드
-        fetch('/api/history?limit=50')
-            .then(r => r.json())
-            .then(data => {
-                if (data.history.length === 0) {
-                    document.getElementById('history').innerHTML = `
-                        <div class="bg-white p-8 rounded-lg shadow-md text-center text-gray-500">
-                            아직 대화 기록이 없습니다.
-                        </div>
-                    `;
-                    return;
-                }
-
-                document.getElementById('history').innerHTML = data.history.map(h => {
-                    const isUser = h.role === 'user';
-                    const bgColor = isUser ? 'bg-blue-50 border-blue-200' : 'bg-white';
-                    const icon = isUser ? '👤' : '🤖';
-                    const roleText = isUser ? '사용자' : 'AI 어시스턴트';
-                    const toolColorClass = toolColors[h.tool] || 'bg-gray-100 text-gray-800';
-                    const timestamp = new Date(h.created_at).toLocaleString('ko-KR');
-
-                    // 내용 미리보기 (200자 제한)
-                    const preview = h.content.length > 200
-                        ? h.content.substring(0, 200) + '...'
-                        : h.content;
-
-                    return `
-                        <div class="bg-white rounded-lg shadow-md overflow-hidden border-l-4 ${isUser ? 'border-blue-500' : 'border-green-500'}">
-                            <div class="p-6">
-                                <div class="flex items-center justify-between mb-3">
-                                    <div class="flex items-center space-x-2">
-                                        <span class="text-2xl">${icon}</span>
-                                        <span class="font-bold text-gray-800">${roleText}</span>
-                                    </div>
-                                    <div class="flex items-center space-x-2 text-sm text-gray-500">
-                                        ${h.tool ? `<span class="px-2 py-1 rounded-full ${toolColorClass} font-semibold">${h.tool}</span>` : ''}
-                                        ${h.score ? `<span class="px-2 py-1 rounded-full bg-gray-100 text-gray-700">📊 ${h.score}점</span>` : ''}
-                                        <span>🕐 ${timestamp}</span>
-                                    </div>
-                                </div>
-                                <div class="text-gray-700 whitespace-pre-wrap leading-relaxed">${preview}</div>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-            })
-            .catch(err => {
-                document.getElementById('history').innerHTML = `
-                    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-                        ⚠️ 대화 기록 로드 실패: ${err.message}
+                        ⚠️ 통계 로드 실패: ${esc(err.message)}
                     </div>
                 `;
             });
