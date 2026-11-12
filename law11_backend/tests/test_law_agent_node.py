@@ -23,9 +23,8 @@ async def test_law_agent_node_returns_subgraph_answer():
         "answer": "위반 시 5년 이하 징역",
         "final_tool": "law_rag_tool",
     }
-    mock_factory = MagicMock(return_value=mock_graph)
-
-    with patch("app.services.langgraph_multi_agent.create_self_rag_subgraph", mock_factory):
+    # #89: 서브그래프는 import 시 1회 compile된 _self_rag를 쓴다 — 팩토리가 아니라 인스턴스를 바꿔 끼운다
+    with patch("app.services.langgraph_multi_agent._self_rag", mock_graph):
         result = await law_agent_node(_state())
 
     assert result["final_answer"] == "위반 시 5년 이하 징역"
@@ -36,9 +35,8 @@ async def test_law_agent_node_returns_subgraph_answer():
 async def test_law_agent_node_passes_question_to_subgraph():
     mock_graph = AsyncMock()
     mock_graph.ainvoke.return_value = {"answer": "답변", "final_tool": "law_rag_tool"}
-    mock_factory = MagicMock(return_value=mock_graph)
 
-    with patch("app.services.langgraph_multi_agent.create_self_rag_subgraph", mock_factory):
+    with patch("app.services.langgraph_multi_agent._self_rag", mock_graph):
         await law_agent_node(_state(question="특정 질문"))
 
     call_args = mock_graph.ainvoke.call_args[0][0]
@@ -52,9 +50,8 @@ async def test_law_agent_node_websearch_fallback_reflected_in_metadata():
         "answer": "웹 검색으로 찾은 답변",
         "final_tool": "websearch_tool",
     }
-    mock_factory = MagicMock(return_value=mock_graph)
 
-    with patch("app.services.langgraph_multi_agent.create_self_rag_subgraph", mock_factory):
+    with patch("app.services.langgraph_multi_agent._self_rag", mock_graph):
         result = await law_agent_node(_state())
 
     assert result["final_answer"] == "웹 검색으로 찾은 답변"

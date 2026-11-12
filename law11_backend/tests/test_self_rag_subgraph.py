@@ -28,20 +28,19 @@ def _state(**kwargs) -> RagState:
 
 # ── retrieve ──────────────────────────────────────────────
 
+# #89: retrieve의 채점 컨텍스트는 운영 검색 함수(search_law_articles)의 결과다 — Qdrant 직접 조회 아님.
+def _found(*texts):
+    return MagicMock(articles=[{"text": t, "score": 1.0} for t in texts])
+
+
 @pytest.mark.asyncio
 async def test_retrieve_collects_contexts_and_answer():
-    mock_hit = MagicMock()
-    mock_hit.payload = {"text": "산업안전보건법 제17조 내용"}
-
     async def _law_run(plan):
         yield ToolChunk(type="text", payload="GPT 답변 텍스트")
         yield ToolChunk(type="status", payload="완료")
 
-    with patch("app.services.self_rag_subgraph.get_embedding_async", new_callable=AsyncMock, return_value=[0.1]*3072), \
-         patch("app.services.self_rag_subgraph.settings") as mock_s, \
-         patch("app.services.self_rag_subgraph.law_rag_tool") as mock_law:
-        mock_s.qdrant_client.search = AsyncMock(return_value=[mock_hit])
-        mock_s.QDRANT_COLLECTION_NAME = "laws"
+    with patch("app.services.self_rag_subgraph.law_rag_tool") as mock_law:
+        mock_law.search_law_articles = AsyncMock(return_value=_found("산업안전보건법 제17조 내용"))
         mock_law.run = _law_run
 
         result = await retrieve(_state())
@@ -57,11 +56,8 @@ async def test_retrieve_increments_retry_count():
     async def _law_run(plan):
         yield ToolChunk(type="text", payload="답변")
 
-    with patch("app.services.self_rag_subgraph.get_embedding_async", new_callable=AsyncMock, return_value=[0.1]*3072), \
-         patch("app.services.self_rag_subgraph.settings") as mock_s, \
-         patch("app.services.self_rag_subgraph.law_rag_tool") as mock_law:
-        mock_s.qdrant_client.search = AsyncMock(return_value=[])
-        mock_s.QDRANT_COLLECTION_NAME = "laws"
+    with patch("app.services.self_rag_subgraph.law_rag_tool") as mock_law:
+        mock_law.search_law_articles = AsyncMock(return_value=_found())
         mock_law.run = _law_run
 
         result = await retrieve(_state(retry_count=1))
@@ -71,19 +67,11 @@ async def test_retrieve_increments_retry_count():
 
 @pytest.mark.asyncio
 async def test_retrieve_skips_empty_context_payloads():
-    mock_hit_valid = MagicMock()
-    mock_hit_valid.payload = {"text": "조문 내용"}
-    mock_hit_empty = MagicMock()
-    mock_hit_empty.payload = {"text": ""}
-
     async def _law_run(plan):
         yield ToolChunk(type="text", payload="답변")
 
-    with patch("app.services.self_rag_subgraph.get_embedding_async", new_callable=AsyncMock, return_value=[0.1]*3072), \
-         patch("app.services.self_rag_subgraph.settings") as mock_s, \
-         patch("app.services.self_rag_subgraph.law_rag_tool") as mock_law:
-        mock_s.qdrant_client.search = AsyncMock(return_value=[mock_hit_valid, mock_hit_empty])
-        mock_s.QDRANT_COLLECTION_NAME = "laws"
+    with patch("app.services.self_rag_subgraph.law_rag_tool") as mock_law:
+        mock_law.search_law_articles = AsyncMock(return_value=_found("조문 내용", ""))
         mock_law.run = _law_run
 
         result = await retrieve(_state())

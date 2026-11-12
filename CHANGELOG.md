@@ -1,7 +1,7 @@
 # Law11 Changelog
 
 루트 [README.md](README.md)에서 옮겨온 발견·수정 이력입니다. 형식: **증상 → 근본 원인 → 실측 검증**.
-번호(#1~#88)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
+번호(#1~#89)는 README·커밋·코드 주석에서 그대로 참조되므로 변경하지 않습니다.
 
 ## 목차
 
@@ -93,6 +93,7 @@
 - [86. 법령 갱신 Task를 버리고 있었다 — GC·예외 미관측·중복 실행 v1.18.6](#86-법령-갱신-task를-버리고-있었다--gc예외-미관측중복-실행-v1186)
 - [87. 요청마다 동기 디스크 I/O가 이벤트 루프를 세우고 있었다 v1.18.7](#87-요청마다-동기-디스크-io가-이벤트-루프를-세우고-있었다-v1187)
 - [88. 라우터가 두 번째 OpenAI 클라이언트를 만들어 쓰고 있었다 — 규칙은 있었지만 지키는 코드가 없었다 v1.18.8](#88-라우터가-두-번째-openai-클라이언트를-만들어-쓰고-있었다--규칙은-있었지만-지키는-코드가-없었다-v1188)
+- [89. 실험 경로(/ask-multi)의 배선 결함 넷 — 판례 미연결·context 유실·매 요청 compile·채점 컨텍스트 불일치 v1.18.9](#89-실험-경로ask-multi의-배선-결함-넷--판례-미연결context-유실매-요청-compile채점-컨텍스트-불일치-v1189)
 - [P1. 조문 본문의 항·호 번호 중복 + 인용 배지 순서/점수 불일치 2c8097e](#p1-조문-본문의-항호-번호-중복--인용-배지-순서점수-불일치-2c8097e)
 - [P2. 스트림 완료 콜백 경합 + confidence_score 불일치 764b646](#p2-스트림-완료-콜백-경합--confidence_score-불일치-764b646)
 - [P3. 웹 폴백 인용의 "0%" 관련도 배지 ffdcb2f](#p3-웹-폴백-인용의-0-관련도-배지-ffdcb2f)
@@ -1928,6 +1929,22 @@ mutation test 3회로 두 조건이 각각 **유일한 방어선**임을 확인�
 **검증**: 2개 — (a) 위 소스 규칙, (b) `_classify_with_llm`이 `settings.openai_client`를 타며 `timeout`을 넘기는지. mutation test: 자체 클라이언트 줄을 되살리면 (a)가 `question_router.py:30`을 지목해 실패, `timeout=`을 지우면 (b) 실패. `pytest` 215 collected (214 passed + 설계상 skip 1).
 
 **남은 과제**: 두 업데이터의 클라이언트 생성을 settings로 모을지는 별도 판단. 지금은 "요청 경로는 단일 클라이언트, 배치는 자기 수명 주기"가 명시된 상태다.
+
+### 89. 실험 경로(/ask-multi)의 배선 결함 넷 — 판례 미연결·context 유실·매 요청 compile·채점 컨텍스트 불일치 `v1.18.9`
+
+`/ask-multi`는 LangGraph 멀티에이전트 + Self-RAG **실험 경로**다. 프론트는 `/ask`만 부르므로 사용자 영향은 없지만, 포트폴리오가 "실험 경로에서 Self-RAG를 검증했다"고 말하는 이상 그 경로가 **말한 대로 동작해야** 한다. 코드 점검에서 넷이 나왔고 전부 배선 문제다 — 로직이 아니라 연결이 빠지거나 끊겨 있었다.
+
+**① 판례 툴이 라우팅 맵에 없었다.** `question_router`는 `case_law_rag_tool`을 돌려주는데 `_ROUTING_MAP`에 그 키가 없어 `.get(tool, "general_agent")`로 **잡담 툴**에 떨어졌다. 판례 질문이 검색도 인용도 없이 LLM 기억으로 답하고, 메트릭은 `agent=case_law_rag_tool`로 기록돼 정상처럼 보였다. #38에서 판례 툴을 추가할 때 CLAUDE.md의 "세 곳을 동시에 수정"(tool_map·router valid set·툴 파일)에 이 맵이 없었다 — 네 번째 지점이었다. `case_agent` 노드와 맵 항목을 추가했다.
+
+**② router의 context가 툴에 닿지 않았다.** `router_node`는 `detect_tool`로 세션 history를 `plan.args["context"]`에 실어 받고도 `plan.tool`만 state에 넣었다. `_make_tool_node`는 `ToolPlan`을 **새로** 만들며 `query`·`session_id`만 넣었다. #9·#18에서 고친 "후속 질문의 대명사 해석"이 이 경로에서는 전부 죽어 있었다 — websearch_tool의 docstring이 적어 둔 바로 그 실패("그거 안 지키면?" → 무관한 뉴스)가 재현되는 구조. state에 `tool_args`를 추가해 `plan.args`를 통째로 넘기고, 노드는 그 위에 `query`·`session_id`만 보장한다.
+
+**③ Self-RAG 서브그래프를 요청마다 compile했다.** 같은 파일 127행에 "compile once at import"라고 적어 놓고(#6) `law_agent_node` 안에서 `create_self_rag_subgraph()`를 매 요청 호출했다. 모듈 로드 시 `_self_rag` 하나로.
+
+**④ Self-RAG 채점 컨텍스트가 운영 검색과 달랐다.** `retrieve()`가 채점용 조문을 **필터 없는 Qdrant top-5**로 따로 긁었다. 그런데 답을 만드는 `law_rag_tool`은 PG 정확 매칭·법령 필터 검색·웹 폴백을 탄다. "제17조 내용은?"에 PG가 제17조를 정확히 꺼내 답했는데 채점은 시행령·규칙 조문 다섯 개를 보고 **HALLUCINATION**을 찍는다 → 재시도 2회(같은 결정론적 검색이라 결과 동일, GPT 생성만 3번) → 웹 폴백이 맞는 DB 답을 덮어쓴다. 채점 컨텍스트를 `law_rag_tool.search_law_articles()`(운영·평가 공용 단일 검색 함수, #61)의 결과로 바꿨다 — 이제 답과 채점이 같은 조문을 본다.
+
+**검증**: `tests/test_multi_agent_wiring.py` 4개 (①~④ 각 1개) + 기존 `test_law_agent_node`·`test_self_rag_subgraph`의 mock 대상을 새 배선에 맞게 수정. mutation test 4종 각각 해당 테스트 1개만 실패: 맵 항목 제거 / `tool_args` 병합 제거 / 매 요청 compile 복원 / 채점 컨텍스트 비우기. `pytest` 219 collected (218 passed + 설계상 skip 1).
+
+**남은 과제**: ④를 고쳐도 재시도 루프는 여전히 **같은 검색을 다시 돌린다** — 재시도에 새 정보가 없다. 질의 재작성(query rewrite) 없는 재시도는 비용만 쓰므로, 이 경로를 계속 쓸 거면 재시도 자체를 빼거나 재작성 노드를 넣어야 한다. 실험 경로의 다음 결정 사항으로 둔다.
 
 ---
 

@@ -2,8 +2,6 @@ from typing import List, TypedDict
 
 from langgraph.graph import StateGraph, END
 
-from app.config import settings
-from app.services.rag_service import get_embedding_async
 from app.services import rag_grader
 from app.tools import law_rag_tool, websearch_tool
 from core.plan import ToolPlan
@@ -23,13 +21,12 @@ class RagState(TypedDict):
 async def retrieve(state: RagState) -> RagState:
     question = state["question"]
 
-    embedding = await get_embedding_async(question)
-    hits = await settings.qdrant_client.search(
-        settings.QDRANT_COLLECTION_NAME,
-        embedding,
-        limit=5,
-    )
-    contexts = [h.payload.get("text", "") for h in hits if h.payload.get("text")]
+    # ⚠️ 채점 컨텍스트는 law_rag_tool이 **실제로 답에 쓴** 조문이어야 한다 (#89). 예전엔 필터 없는
+    # Qdrant top-5를 따로 긁어 채점했는데, 운영 경로는 PG 정확 매칭·법령 필터 검색·웹 폴백을
+    # 타므로 둘이 다른 조문을 보는 일이 흔했다 — 맞는 답을 HALLUCINATION으로 찍고 재시도했다.
+    # search_law_articles는 운영·평가가 공유하는 단일 검색 함수다(CLAUDE.md).
+    found = await law_rag_tool.search_law_articles(question)
+    contexts = [a["text"] for a in found.articles if a.get("text")]
 
     plan = ToolPlan(tool="law_rag_tool", args={"query": question})
     answer_parts: List[str] = []
