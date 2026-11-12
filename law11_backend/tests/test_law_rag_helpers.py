@@ -90,6 +90,19 @@ def test_expand_legal_terms_maps_statutory_term():
     assert out.startswith("폭발 위험 분위기")
 
 
+def test_expand_legal_terms_points_air_quality_question_at_definition_article():
+    """#93: "적정공기" 수치 기준은 제618조(정의)에만 있는데 정의 조문이 top-5 밖(8위)이라
+    모델이 "법령에 명시된 바 없다"고 단정했다. 정의 조문 용어를 붙이면 1위 (실측)."""
+    out = law_rag_tool.expand_legal_terms("밀폐공간 작업 전 적정 공기 산소농도 기준이 뭐야?")
+    assert "적정공기의 정의" in out
+
+
+def test_semantic_answer_prompt_forbids_whole_law_negation():
+    """#93: 제공 조문은 검색 결과 일부다 — "법령에 없다"는 단정은 검색 누락을 사실로 포장한다."""
+    import inspect
+    assert "법령 전체를 부정 단정하지 않는다" in inspect.getsource(law_rag_tool.run)
+
+
 def test_expand_legal_terms_noop_without_trigger():
     q = "안전관리자 선임 기준은?"
     assert law_rag_tool.expand_legal_terms(q) == q

@@ -14,6 +14,7 @@ eval_multiturn.py — 멀티턴 회귀 eval
 
 판정:
     - expect_any: 마지막 턴 답변에 키워드 중 하나라도 포함돼야 통과
+    - forbid_any: 마지막 턴 답변에 키워드가 하나라도 있으면 실패 (#93)
       (이전 턴의 주제를 이어받았는지 확인)
     - expect_tool / forbid_tool: 마지막 턴이 chat_history metadata->>'tool'에
       기록한 단축 tool 이름 검사 (라우팅 회귀 확인)
@@ -91,6 +92,17 @@ SCENARIOS = [
         ],
         "expect_tool": "news",
     },
+    {
+        # 단일 턴이지만 "검색 누락 → 법령 전체 부정 단정" 회귀를 운영 경로로 잡는 자리가
+        # 여기뿐이다. 정답(산소 18% 이상 23.5% 미만)은 제618조(정의)에 있다.
+        "id": "MT-006",
+        "bug": "(#93) 제618조가 top-5 밖이라 '적정공기 기준은 법령에 명시된 바 없다'고 단정",
+        "turns": [
+            "밀폐공간 작업 전 적정 공기 산소농도 기준이 뭐야?",
+        ],
+        "expect_any": ["18퍼센트", "18%", "18 퍼센트"],
+        "forbid_any": ["명시된 바가 없", "명시된 바 없", "명시되어 있지 않", "법령에 없", "법령에서 정하고 있지 않"],
+    },
 ]
 
 
@@ -146,11 +158,16 @@ async def run_scenario(sc: dict) -> dict:
     async with httpx.AsyncClient() as client:
         for q in sc["turns"]:
             answer = await ask(client, session_id, q)
-            await asyncio.sleep(0.5)   # 턴 저장 완료 여유
+            # 턴 저장 완료 여유 + 레이트리밋 간격: /api/ask는 IP당 10/분(#65)이라
+            # 시나리오 6개(11턴)를 연달아 보내면 마지막 턴이 429로 끊긴다 (실측, #93).
+            await asyncio.sleep(6.5)
 
     failures = []
     if "expect_any" in sc and not any(k in answer for k in sc["expect_any"]):
         failures.append(f"답변에 {sc['expect_any']} 중 아무것도 없음")
+    hit = [k for k in sc.get("forbid_any", []) if k in answer]
+    if hit:
+        failures.append(f"답변에 금지 문구 {hit}")
     if "expect_tool" in sc or "forbid_tool" in sc:
         tool = await last_tool(session_id)
         if sc.get("expect_tool") and tool != sc["expect_tool"]:
