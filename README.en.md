@@ -1,11 +1,11 @@
 # Law11 — Korean Occupational Safety Law RAG Chatbot
 
-> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (91 documented find-fix cycles, plus 7 fixes that predate the changelog — see [CHANGELOG.md](CHANGELOG.md)).
+> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (92 documented find-fix cycles, plus 7 fixes that predate the changelog — see [CHANGELOG.md](CHANGELOG.md)).
 
 [![CI](https://github.com/codingiswine/law11/actions/workflows/ci.yml/badge.svg)](https://github.com/codingiswine/law11/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
-[![Version](https://img.shields.io/badge/Version-1.19.1-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.19.2-orange.svg)]()
 
 A domain-specialized RAG system over **9 Korean occupational-safety laws (1,641 articles)**. Built on a chatbot from a startup internship the year before, then rebuilt as an independent personal project — alongside an IT-academy internship — with a measurement-first engineering process.
 
@@ -24,16 +24,16 @@ All numbers are reproducible from the eval scripts in this repo (30-case correct
 | Retrieval Top-3 recall (vector-only) | **93.3%** · Top-5/10 100% (30-case golden set, re-measured 2026-11-04 on the resynced corpus, #71; 96.7% before the resync; multi-accepted-article policy #30, statutory-term query expansion #33). The one new miss (GS-020) is caught by the PostgreSQL exact match in production — 0 new failures on the production path |
 | RAGAS Faithfulness / Answer Relevancy / Context Precision / Context Recall | **0.669–0.814 / 0.606–0.616 / 0.993–0.996 / 0.918–0.929** (range over 3 runs of the same configuration, 2026-11-04 — #72; judge `gpt-4o-mini`, kept separate from the generator model — #57). Until #57 the harness generated answers with a *different* prompt and temperature than production, so earlier figures did not describe the shipped system. **Measured faithfulness noise is 19.3%** — two to three times the earlier estimate (8.45%), so a single-run comparison says nothing about that metric (#72). See the Korean README footnote 2 |
 | Hallucination (golden set) | **GROUNDED 27–28/28 after statute cross-check** · **0 HALLUCINATION** (judge's raw verdict 26/28, identical across all 3 runs, 2026-11-10 — #78) | The two cases the judge flags every run (GS-004, GS-016) are dismissed because a machine check finds the flagged sentence **verbatim in the provided statute**. The dismissal also requires every number in the flagged sentence to appear in the statute and no negation absent from it — so an answer that copies an article but alters a figure, or flips its conclusion, is never dismissed (`tests/test_judge_claim_evidence.py`). Detection power is measured against 4 fabricated answers (`eval/judge_negative_controls.json`): 4/4 HALLUCINATION in all 3 runs. A repeated flag is a signal, not proof — every flag is checked against the statute text (#71's GS-024 was a real defect, fixed in #72). **Judge verdicts do not reproduce across dates**: the 27/28 recorded on 2026-11-04 came back as 25/28 when re-run on 2026-11-10 with the same input and prompt (#78). Citation misses were 0 as of 2026-11-04; the 2026-11-10 run could not verify one citation because PostgreSQL was down (`UNVERIFIED` — not a pass). 28 of the 30 golden cases are grounded in DB articles; the other 2 fall through to web search and are not scored (#61). **Scoped to the 9 laws in the DB** |
-| Router accuracy | **43/43 (100%)** (keyword fast-path + LLM hybrid, incl. 11 case-law routing cases) |
+| Router accuracy | **46/46 (100%)** (keyword fast-path + LLM hybrid, incl. 11 case-law routing cases) |
 | Multi-turn regression evals | 5 scenarios, each **mutation-tested** (fix reverted → eval must fail) |
-| Automated tests / CI | 225 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
+| Automated tests / CI | 231 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
 | Load test | 20 concurrent users, zero failures (2× the design target) |
 | Fault injection | 5 dependencies (PG, Qdrant, OpenAI, Tavily, Naver) killed individually — 4 defects found and fixed (#31) |
-| Documented find-fix cycles | 91 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
+| Documented find-fix cycles | 92 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
 
 ## Engineering highlights
 
-The [changelog](CHANGELOG.md) documents 91 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
+The [changelog](CHANGELOG.md) documents 92 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
 
 - **The golden dataset was lying.** Retrieval eval showed 46.7% Top-3 recall; cross-checking failures against the DB revealed the *retrieval was right and the answer key was wrong* — 13/30 golden article numbers pointed at unrelated articles (e.g., "electric shock prevention" labeled as Article 132, which is about cranes). Correcting the labels moved Top-3 recall *down* to 40.0% — the fake passes were gone — and only against an honest answer key did the real culprit surface: removing the reranker took Top-3 to 83.3% and RAGAS Faithfulness from 0.44 to 0.74. (#25)
 - **193 articles were silently lost to a normalization collision.** Korean laws have branch articles (제14조**의2**, "Article 14-2"); the ingest pipeline collapsed them into the same key as their base article, and the upsert's `ON CONFLICT DO UPDATE` overwrote whichever came first — entire articles (including the one defining the national disaster response HQ) vanished without any error. On the query side the same normalization turned "제14조의2" into "142", matching Article 142. Fixed the scheme end-to-end and resynced: 1,436 → 1,629 articles, RAGAS Faithfulness 0.74 → 0.86. (#28)
@@ -50,7 +50,7 @@ The [changelog](CHANGELOG.md) documents 91 find-fix cycles in "symptom → root 
 
 ## Fixes that predate the changelog
 
-The numbered changelog (#1–#91) starts at `v1.0.1` (2026-07-16), when the
+The numbered changelog (#1–#92) starts at `v1.0.1` (2026-07-16), when the
 "symptom → root cause → measured verification" format was adopted. Earlier bug fixes
 exist only as commits; a later audit (`docs/defect_audit.md`) recovered them. They are
 listed separately so the existing numbering stays stable.
@@ -102,7 +102,7 @@ law_rag_tool retrieval order:
 |---|---|
 | `python -m eval.harness` | RAGAS 4 metrics over the 30-case golden set, with regression compare (per-metric gates **derived** from measured noise, not hardcoded: answer relevancy 3.2%, context recall 2.2%, context precision 2.0% — each 2× that metric's measured noise with a 2% floor. Faithfulness is **excluded from single-run judgment**: its noise is 19.3%, so a 2× gate of 38.7% would catch nothing worth catching — `--repeat` only. A gate drifting below its metric's noise fails pytest, #74). `--repeat N` measures that configuration's noise first |
 | `python -m eval.eval_retrieval` | Retrieval Top-1/Top-3 accuracy (embedding-only, free) |
-| `python -m eval.eval_router` | Router accuracy on 43 labeled cases |
+| `python -m eval.eval_router` | Router accuracy on 46 labeled cases |
 | `python -m eval.eval_hallucination` | LLM-judge groundedness + citation verification, plus a deterministic cross-check that dismisses a flag whose sentence is verbatim in the provided statute — reported *beside* the judge's raw verdict, never in place of it (#78). `--repeat N` judges the same input N times and reports a **per-case history**, separating cases flagged every run (check them against the statute) from cases whose verdict flips (an unstable judge). Repetition is a signal, not proof — #72's GS-024 repeated 3/3 and was a real defect; GS-004 repeated 3/3 and was a false flag (#77) |
 | `python -m eval.eval_rubric` | **Per-item** scoring against a rubric defined per question type (penalty / direct-article / standard / concept), judged one item at a time with structured output. The product is not an average — it is *which item lost points*. Items the statute does not regulate are scored `해당없음` and excluded, never 0 (#80) |
 | `python -m eval.eval_multiturn` | Multi-turn regression scenarios via the live API (mutation-tested) |

@@ -56,6 +56,10 @@ LABELED_CASES: List[Dict] = [
     # ── 법령 (처벌/패널티) ──
     {"question": "안전조치 위반하면 벌금 얼마야?",                "label": "law"},
     {"question": "산재 은폐하면 어떻게 되나요?",                  "label": "law"},
+    # #92 — "사고"가 뉴스 fast-path 키워드여서 처벌 질문이 기사 요약으로 샜던 실측 케이스
+    {"question": "중대재해처벌법에서 사업주가 사망사고를 내면 처벌이 어떻게 돼?", "label": "law"},
+    {"question": "작업 중 사고가 나면 사업주는 뭘 해야 해?",      "label": "law"},
+    {"question": "산안법상 추락사고 예방 조치는?",                "label": "law"},
 
     # ── 비법령 (뉴스) ──
     {"question": "최근 산업재해 뉴스 알려줘",                     "label": "non-law"},

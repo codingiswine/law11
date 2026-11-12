@@ -22,7 +22,7 @@
 | Top-3 검색 재현율 | 93.3% (Top-1 70.0%, Top-5·10 100%) | `python -m eval.eval_retrieval` (LLM 비용 없음) |
 | RAGAS (F / AR / CP / CR) | 0.669~0.814 / 0.606~0.616 / 0.993~0.996 / 0.918~0.929 | `python -m eval.harness` (같은 조건 3회 범위) |
 | 할루시네이션 | 조문 대조 후 GROUNDED 27~28/28, HALLUCINATION 0건 (판정기 원본 26/28, 3회 동일 — #78) | `python -m eval.eval_hallucination` |
-| 라우터 정확도 | 43/43 | `python -m eval.eval_router` |
+| 라우터 정확도 | 46/46 | `python -m eval.eval_router` |
 | 배포 | **없음** (EC2 삭제함) | — |
 | 실사용자 | **0명** | — |
 
