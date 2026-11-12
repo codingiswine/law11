@@ -117,6 +117,13 @@ def test_priority_law_for_appointment_questions_includes_the_decree():
     assert law_rag_tool.get_priority_law("오늘 날씨") is None
 
 
+def test_priority_law_for_training_questions_excludes_the_serious_accidents_decree():
+    """#101: 근로자 교육 시간 질문에 중대재해법 시행령 제6조(경영책임자 교육 20시간)가 1위로 와서 대체 답변."""
+    assert law_rag_tool.get_priority_law("근로자 정기 안전보건교육은 몇 시간 받아야 해?") == ["산업안전보건법", "산업안전보건법시행규칙"]
+    # 경영책임자 교육은 중대재해 그룹이 먼저 — 시행령까지 포함
+    assert law_rag_tool.get_priority_law("경영책임자가 받아야 하는 안전보건교육은?") == ["중대재해처벌등에관한법률", "중대재해처벌등에관한법률시행령"]
+
+
 def test_answer_prompts_forbid_filling_delegated_numbers():
     """#95: 조문이 시행령·별표에 맡긴 수치를 모델이 지식으로 채워 조문 근거처럼 제시했다."""
     import inspect
