@@ -180,6 +180,14 @@ def deep_extract_text(value) -> List[str]:
     return out
 
 
+def pending_articles(rows: List[dict], today=None) -> List[tuple]:
+    """시행일자가 오늘보다 뒤인 조문 — DRF 법령 ID 호출은 최신 공포본(시행 전 개정판)을
+    주므로 생긴다 (#97). 막지 않고 알린다: 오늘 시행 중인 판은 이 키로 받을 수 없다."""
+    today = today or datetime.now().date()
+    return [(r["article_number_norm"], r["enforcement_date"]) for r in rows
+            if r.get("enforcement_date") and r["enforcement_date"] > today]
+
+
 def extract_article_payloads(law_name: str, drf_json: dict) -> List[dict]:
     """DRF JSON → 조문 리스트 변환"""
     articles = drf_json.get("법령", {}).get("조문", {})
@@ -587,6 +595,12 @@ class AsyncLawUpdater:
 
             if console:
                 console.print(f"📝 [{law_name}] {len(rows)}개 조문 추출 완료")
+            pending = pending_articles(rows)
+            if pending:
+                dates = sorted({str(d) for _, d in pending})
+                msg = (f"⚠️  [{law_name}] 시행 전 개정판 조문 {len(pending)}/{len(rows)}개 "
+                       f"(시행일 {', '.join(dates)}) — 답변에 '시행 예정' 표시됨 (#97)")
+                console.print(msg, style="yellow") if console else print(msg)
 
             # 3. PostgreSQL 업데이트
             await self.upsert_pg(rows)

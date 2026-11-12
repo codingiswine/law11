@@ -349,6 +349,31 @@ def prior_user_question(query: str, context: str) -> str:
     return prev[-1] if prev else ""
 
 
+# ── 시행 예정 표시 (#97) ─────────────────────────────────────
+# 법제처 DRF를 법령 ID로 호출하면 **최신 공포본**이 온다 — 아직 시행 전인 개정판이다.
+# 산업안전보건법은 2026-10-27 공포(22122)·2027-04-28 시행판이 통째로 저장돼 188개 조문
+# 전부 시행일자 2027-04-28이고, 그중 18개는 본문도 아직 시행되지 않은 개정 후 내용이다.
+# 오늘 시행 중인 판은 이 키로는 받을 수 없어(연혁 API 미제공, efYd 무시) 본문은 그대로
+# 두고, 날짜가 미래면 사용자에게 그 사실을 알린다.
+# ponytail: 바뀌지 않은 170개 조문까지 같이 경고한다(과잉 경고 쪽이 안전). 연혁 API가
+# 열리면 시행예정판들의 조문변경여부 합집합으로 바뀐 조문만 표시하도록 좁힌다.
+def enforcement_notice(enforcement_date, today=None) -> str:
+    """시행일자가 오늘보다 뒤면 경고 문구, 아니면 빈 문자열."""
+    if not enforcement_date:
+        return ""
+    today = today or datetime.now().date()
+    d = enforcement_date if hasattr(enforcement_date, "year") else None
+    if d is None:
+        try:
+            d = datetime.strptime(str(enforcement_date)[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return ""
+    if d <= today:
+        return ""
+    return (f" ⚠️ **시행 예정** — 이 날짜에 시행되는 개정판 기준이며, "
+            f"현재 시행 중인 조문과 본문이 다를 수 있습니다")
+
+
 def _prepend_context(context: str, content: str) -> str:
     if not context:
         return content
@@ -831,13 +856,13 @@ async def run(plan):
             # 여기서는 법령 정보(시행일자, 출처)만 추가 출력
             footer = (
                 f"\n\n📘 **법령 정보**  \n"
-                f"시행일자: {enforcement_date or '정보 없음'}  \n"
+                f"시행일자: {enforcement_date or '정보 없음'}{enforcement_notice(enforcement_date)}  \n"
                 f"출처: [{cite_law} {article_display(cite_art)}]({law_url})"
             )
             yield ToolChunk(type="text", payload=footer)
         else:
             # summary는 스트리밍으로 이미 전송됨 → 조문 원문 + 시행일자만 추가
-            footer = f"\n\n**시행일자:** {enforcement_date or '정보 없음'}"
+            footer = f"\n\n**시행일자:** {enforcement_date or '정보 없음'}{enforcement_notice(enforcement_date)}"
             yield ToolChunk(type="text", payload=footer)
 
         # ✅ 마지막에 출처 정보만 별도로 전송
