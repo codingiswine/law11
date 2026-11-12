@@ -97,6 +97,12 @@ def test_expand_legal_terms_points_air_quality_question_at_definition_article():
     assert "적정공기의 정의" in out
 
 
+def test_expand_legal_terms_maps_oxygen_deficiency_to_the_same_definition_article():
+    """#100: "산소결핍"도 제618조(정의)가 답인데 0.431로 기준 미달이라 웹으로 샜다. 용어 부착 시 0.544 1위."""
+    out = law_rag_tool.expand_legal_terms("밀폐공간에서 산소결핍이란 산소농도 몇 퍼센트 미만이야?")
+    assert "적정공기의 정의" in out
+
+
 def test_semantic_answer_prompt_forbids_whole_law_negation():
     """#93: 제공 조문은 검색 결과 일부다 — "법령에 없다"는 단정은 검색 누락을 사실로 포장한다."""
     import inspect
