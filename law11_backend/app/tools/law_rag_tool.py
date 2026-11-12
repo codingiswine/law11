@@ -374,6 +374,90 @@ def enforcement_notice(enforcement_date, today=None) -> str:
             f"현재 시행 중인 조문과 본문이 다를 수 있습니다")
 
 
+# ── 벌칙 조문 조회 (#99) ─────────────────────────────────────
+# "그거 안 지키면 처벌은?" — 벌칙 조문(제168조 등)은 "제38조제1항…을 위반한 자"처럼 조문
+# 번호 나열이라 임베딩으로는 절대 안 잡힌다(실측 15위 밖). 모델은 대신 재난법 제78조의3
+# 같은 다른 법의 벌칙을 가져다 썼다. 처벌 질문이면 질문 또는 직전 답변이 인용한 조문의
+# 번호를 참조하는 벌칙·과태료 조문을 PostgreSQL에서 꺼내 검색 결과 맨 앞에 넣는다.
+_PENALTY_Q = re.compile(r"처벌|벌칙|벌금|징역|과태료|형량|형사")
+_KNOWN_LAWS = (
+    "산업안전보건기준에관한규칙", "산업안전보건법시행규칙", "산업안전보건법시행령", "산업안전보건법",
+    "재난및안전관리기본법시행규칙", "재난및안전관리기본법시행령", "재난및안전관리기본법",
+    "중대재해처벌등에관한법률시행령", "중대재해처벌등에관한법률",
+)
+_CITE_RE = re.compile("(" + "|".join(_KNOWN_LAWS) + r")제(\d+)조(?:의(\d+))?")
+# 안전보건규칙은 법 제38조(안전조치)·제39조(보건조치) 등의 위임 규정(규칙 제1조)이라 규칙 조문
+# 위반은 법 제38조·제39조 위반으로 처벌된다. ponytail: 제1조가 나열한 위임 조문 중 벌칙과 직결되는
+# 둘만 둔다 — 제1조 본문을 같이 넣어 모델이 위임 관계를 조문으로 확인하게 한다.
+_RULE_BASE = {"산업안전보건기준에관한규칙": ("산업안전보건법", ("38", "39"))}
+
+
+def cited_articles(text_: str) -> list:
+    """텍스트에 나오는 (법령_norm, 조문_norm) — 등장 순서, 중복 제거. 공백·괄호 표기 무관."""
+    compact = re.sub(r"[\s\[\]\*]", "", text_ or "")
+    out = []
+    for m in _CITE_RE.finditer(compact):
+        key = (m.group(1), m.group(2) + (f"의{m.group(3)}" if m.group(3) else ""))
+        if key not in out:
+            out.append(key)
+    return out
+
+
+def prior_cited_articles(context: str) -> list:
+    """직전 Law11 답변이 인용한 조문. 답변은 여러 줄이라 'Law11: '부터 다음 '사용자: ' 전까지가 한 턴이다."""
+    lines = (context or "").splitlines()
+    starts = [i for i, ln in enumerate(lines) if ln.startswith("Law11: ")]
+    if not starts:
+        return []
+    block = []
+    for ln in lines[starts[-1]:]:
+        if block and ln.startswith("사용자: "):
+            break
+        block.append(ln)
+    return cited_articles("\n".join(block))
+
+
+async def penalty_articles(targets: list) -> list:
+    """targets가 가리키는 조문을 참조하는 벌칙·과태료 조문 (+ 규칙이면 위임 근거인 규칙 제1조)."""
+    wanted = {}   # law_norm → set(art_norm)
+    extra = []    # (law_norm, art_norm) 그대로 넣을 조문
+    for law, art in targets:
+        if law in _RULE_BASE:
+            base, arts = _RULE_BASE[law]
+            wanted.setdefault(base, set()).update(arts)
+            if (law, "1") not in extra:
+                extra.append((law, "1"))
+        else:
+            wanted.setdefault(law, set()).add(art)
+    rows = []
+    try:
+        async with async_engine.connect() as conn:
+            for law, art in extra:
+                r = (await conn.execute(text("""
+                    SELECT law_name, article_number_norm, text FROM law_chunks
+                    WHERE law_name_norm = :law AND article_number_norm = :art LIMIT 1
+                """), {"law": law, "art": art})).fetchone()
+                if r:
+                    rows.append(r)
+            for law, arts in wanted.items():
+                pat = r"(^|[^0-9])제(" + "|".join(sorted(arts)) + r")조"
+                res = await conn.execute(text("""
+                    SELECT law_name, article_number_norm, text FROM law_chunks
+                    WHERE law_name_norm = :law
+                      AND (text LIKE '%(벌칙)%' OR text LIKE '%(과태료)%')
+                      AND text ~ :pat
+                    ORDER BY article_number_norm LIMIT 4
+                """), {"law": law, "pat": pat})
+                rows.extend(res.fetchall())
+    except Exception as e:
+        print(f"⚠️ 벌칙 조문 조회 실패: {e}")
+        return []
+    # 가중 특례("사망에 이르게 한")는 기본 벌칙 뒤에 — 질문에 사망 사실이 없는데 모델이 앞에 온
+    # 무거운 조문을 결론으로 삼는 것을 실측(2/2)으로 봤다.
+    rows.sort(key=lambda r: "사망에 이르게" in r[2])
+    return [{"law_name": r[0], "article_number": r[1], "text": r[2], "score": 1.0} for r in rows]
+
+
 def _prepend_context(context: str, content: str) -> str:
     if not context:
         return content
@@ -666,6 +750,15 @@ async def run(plan):
     yield ToolChunk(type="status", payload="⚖️ 법령 검색 시작...")
 
     found = await search_law_articles(query, prior_user_question(query, context))
+    if _PENALTY_Q.search(query) and found.source != "missing":
+        targets = cited_articles(query) or prior_cited_articles(context)
+        pen = await penalty_articles(targets) if targets else []
+        if pen:
+            have = {(p["law_name"], p["article_number"]) for p in pen}
+            found.articles = pen + [a for a in found.articles if (a["law_name"], a["article_number"]) not in have][:3]
+            found.source, found.law_name = "qdrant", None   # 벌칙+원 조문을 한 번에 근거로 — Ⓐ 경로
+            found.steps.append("⚖️ 벌칙 조문 조회: " + ", ".join(
+                f"{p['law_name']} {article_display(p['article_number'])}" for p in pen))
     for step in found.steps:
         yield ToolChunk(type="status", payload=step)
 
@@ -741,7 +834,8 @@ async def run(plan):
   질문이 가리키는 법령·대상에 해당하는 조문이 없으면 다른 법령·다른 대상의 조문이나 수치로
   대신하지 않는다 — 예: 근로자 교육 시간을 경영책임자 교육 조문으로, 산업안전보건법 위반 처벌을
   재난법 벌칙으로 답하지 않는다. 처벌·결과가 항·목으로 갈리면 질문의 사실관계(사망·부상·질병 등)가
-  해당하는 분기만 결론에 쓴다.)
+  해당하는 분기만 결론에 쓴다. 질문에 사망 같은 가중 사실이 없으면 위반 자체의 기본 벌칙을 결론에
+  쓰고, 가중 특례는 "사망에 이르게 한 경우에는 …"처럼 조건을 붙여 덧붙인다.)
 🔹 **판단 근거** (이 조문이 적용되는 상황 조건·요건 — 조문에 "~하는 경우",
   "~한 때" 등 적용 조건이 명시돼 있으면 반드시 그 조건을 밝혀, 존댓말)
 🔹 **법적 근거**
