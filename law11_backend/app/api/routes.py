@@ -6,7 +6,7 @@ from app.config import settings as _settings
 from app.rate_limit import limiter
 from fastapi.responses import StreamingResponse, HTMLResponse, Response
 from typing import AsyncGenerator, List, Optional
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 
 # ✅ Docker 기준으로 경로 수정
 from app.config import settings
@@ -304,12 +304,25 @@ async def ask_law11(request: Request, body: QueryRequest):
 # 📜 대화 기록 조회 API
 # ─────────────────────────────
 
+MAX_HISTORY_SESSIONS = 200  # 한 브라우저가 목록 조회에 넘길 수 있는 세션 ID 수 (IN 절 크기 상한)
+
+
 @router.get("/history")
 async def get_chat_history(
-    user_id: str = "law11_user",
+    session_ids: str = "",
     limit: int = 50
 ):
-    """대화 기록 조회"""
+    """대화 기록 조회 — 브라우저가 가진 세션 ID들만 (#81).
+
+    예전에는 user_id로 걸렀는데 모든 방문자가 같은 상수("law11_user")라 필터가 아니었다 —
+    사이드바가 **전체 방문자의 대화**를 받아 그렸다. 인증이 없는 서비스에서 "내 것"의
+    유일한 증거는 브라우저 localStorage의 세션 ID(randomUUID)이므로 목록은 그 ID들로만
+    묶는다. ID를 안 넘기면 DB에 가지 않고 빈 목록을 준다.
+    """
+    ids = [s for s in session_ids.split(",") if s][:MAX_HISTORY_SESSIONS]
+    if not ids:
+        return {"total": 0, "history": []}
+
     sql = text("""
         SELECT
             id,
@@ -320,14 +333,14 @@ async def get_chat_history(
             score,
             created_at
         FROM chat_history
-        WHERE user_id = :user_id
+        WHERE session_id IN :ids
         ORDER BY created_at DESC
         LIMIT :limit
-    """)
+    """).bindparams(bindparam("ids", expanding=True))
 
     try:
         async with async_engine.begin() as conn:
-            result = await conn.execute(sql, {"user_id": user_id, "limit": limit})
+            result = await conn.execute(sql, {"ids": ids, "limit": limit})
             rows = result.fetchall()
 
             history = []
@@ -662,7 +675,11 @@ async def health_check():
 # ─────────────────────────────
 @router.get("/session/{session_id}")
 async def get_session(session_id: str, limit: int = 50):
-    """세션 대화 목록 조회"""
+    """세션 대화 목록 조회.
+
+    소유자 검사는 없다 — 신원 모델이 없어 session_id(randomUUID, 122비트) 자체가
+    접근 권한이다. 목록 API(/history)가 ID를 흘리지 않는 것(#81)이 이 전제의 조건.
+    """
     sql = text("""
         SELECT id, role, content, metadata, score, created_at
         FROM chat_history
@@ -692,7 +709,7 @@ async def get_session(session_id: str, limit: int = 50):
 
 @router.delete("/session/{session_id}", status_code=204)
 async def delete_session(session_id: str):
-    """세션 삭제"""
+    """세션 삭제 — 소유자 검사 없음, get_session과 같은 전제(#81)."""
     sql = text("DELETE FROM chat_history WHERE session_id = :session_id")
     try:
         async with async_engine.begin() as conn:

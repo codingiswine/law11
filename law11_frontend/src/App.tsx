@@ -3,17 +3,16 @@ import Sidebar from "./components/Sidebar";
 import SearchBar from "./components/SearchBar";
 import ChatWindow from "./components/ChatWindow";
 import LawSidePanel from "./components/LawSidePanel";
-import { getSession, submitFeedback } from "./services/api";
+import { getSession, rememberSession, submitFeedback } from "./services/api";
 import type { Message, LawReference, LawSource } from "./types";
 
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [activeQuestion, setActiveQuestion] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string>(() => {
-    const saved = localStorage.getItem("law11_session_id");
-    if (saved) return saved;
-    const id = crypto.randomUUID();
+    const id = localStorage.getItem("law11_session_id") ?? crypto.randomUUID();
     localStorage.setItem("law11_session_id", id);
+    rememberSession(id); // #81: 사이드바 목록은 이 브라우저가 기억하는 ID로만 조회된다
     return id;
   });
   const [selectedLaw, setSelectedLaw] = useState<{ name: string; article: string } | null>(null);
@@ -28,6 +27,7 @@ function App() {
   const handleNewSession = () => {
     const id = crypto.randomUUID();
     localStorage.setItem("law11_session_id", id);
+    rememberSession(id);
     setSessionId(id);
     setMessages([]);
     setActiveQuestion(null);
@@ -39,6 +39,7 @@ function App() {
     if (loaded.length > 0) {
       setMessages(loaded);
       localStorage.setItem("law11_session_id", sid);
+      rememberSession(sid);
       setSessionId(sid);
       setActiveQuestion(null);
       setSelectedLaw(null);

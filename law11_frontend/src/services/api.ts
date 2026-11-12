@@ -20,9 +20,35 @@ export async function getLawContent(name: string, article: string): Promise<LawC
   return response.json();
 }
 
-export async function getHistory(): Promise<SessionSummary[]> {
+// 이 브라우저가 만든/연 세션 ID 목록 (#81). 인증이 없어 "내 대화"의 유일한 근거다 —
+// 서버는 여기 적힌 ID들만 돌려주고, 안 보내면 빈 목록을 준다.
+const SESSIONS_KEY = "law11_session_ids";
+const MAX_SESSIONS = 200;
+
+export function ownSessionIds(): string[] {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/history?user_id=law11_user&limit=200`);
+    const ids = JSON.parse(localStorage.getItem(SESSIONS_KEY) || "[]");
+    return Array.isArray(ids) ? ids.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+export function rememberSession(id: string): void {
+  const ids = [id, ...ownSessionIds().filter(x => x !== id)].slice(0, MAX_SESSIONS);
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(ids)); } catch { /* 저장 불가 환경이면 목록만 비어 보인다 */ }
+}
+
+export function forgetSession(id: string): void {
+  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(ownSessionIds().filter(x => x !== id))); } catch { /* 위와 같음 */ }
+}
+
+export async function getHistory(): Promise<SessionSummary[]> {
+  const ids = ownSessionIds();
+  if (ids.length === 0) return [];
+  try {
+    const params = new URLSearchParams({ session_ids: ids.join(","), limit: "200" });
+    const response = await fetch(`${API_BASE_URL}/api/history?${params.toString()}`);
     if (!response.ok) return [];
     const data = await response.json();
     const rows: any[] = data.history || [];
@@ -55,6 +81,7 @@ export async function getHistory(): Promise<SessionSummary[]> {
 
 export async function deleteSession(sessionId: string): Promise<void> {
   await fetch(`${API_BASE_URL}/api/session/${sessionId}`, { method: "DELETE" });
+  forgetSession(sessionId);
 }
 
 export async function getSession(sessionId: string): Promise<Message[]> {
