@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import json
 import logging
@@ -52,7 +53,9 @@ def _save_embedding(query: str, embedding: List[float]) -> None:
 
 
 async def get_embedding_async(query: str) -> List[float]:
-    cached = _get_cached_embedding(query)
+    # sqlite3는 동기 I/O다 — 이벤트 루프에서 직접 부르면 그 시간 동안 다른 요청의 SSE 스트림이
+    # 전부 멈춘다 (#87). 업데이터가 이미 쓰는 asyncio.to_thread로 루프 밖에서 돌린다.
+    cached = await asyncio.to_thread(_get_cached_embedding, query)
     if cached is not None:
         return cached
 
@@ -61,5 +64,5 @@ async def get_embedding_async(query: str) -> List[float]:
         input=query,
     )
     embedding = response.data[0].embedding
-    _save_embedding(query, embedding)
+    await asyncio.to_thread(_save_embedding, query, embedding)
     return embedding

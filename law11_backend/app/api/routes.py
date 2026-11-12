@@ -257,7 +257,9 @@ async def ask_law11(request: Request, body: QueryRequest):
             # 스트림이 끝나야 생성 시간을 알 수 있어 meta 수신 시점이 아닌 여기서 1회 기록한다
             if meta_payload is not None:
                 tool_sec = round(time.perf_counter() - t0, 3)
-                qa_logger.log_request(
+                # 파일 append는 동기 I/O — 루프 밖에서 (#87). 다른 스트림이 이 fsync를 기다리면 안 된다.
+                await asyncio.to_thread(
+                    qa_logger.log_request,
                     query=body.question,
                     query_type=meta_payload.get("query_type", ""),
                     selected_source=meta_payload.get("selected_source", ""),
