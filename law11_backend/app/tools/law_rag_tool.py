@@ -705,14 +705,19 @@ async def run(plan):
     ]
 
     # ⑤ 조문 발견 시 GPT 요약
+    # ⚠️ 인용은 질문에서 파싱한 law_name/article_number가 아니라 **검색이 실제로 찾은**
+    # 조문(best)으로 만든다 (#82). ③ 경로(법령명만 인식 → 법령 필터 의미 검색)에서는
+    # 질문에 조문번호가 없어 found.article_number == "" 이고, 그걸 쓰면 citations 테이블에
+    # 빈 조문·URL에 "제조"가 들어갔다.
+    cite_law, cite_art = best["law_name"], best["article_number"]
     pg_citations = [
         {
-            "law_name": law_name,
-            "article_number": article_number,
+            "law_name": cite_law,
+            "article_number": cite_art,
             "score": 1.0,
             "rank": 1,
         }
-    ] if law_name else []
+    ] if cite_law else []
     yield ToolChunk(type="meta", payload={
         "query_type": "direct_article" if is_direct_article_query else "semantic",
         "selected_source": selected_source or "pg",
@@ -772,7 +777,9 @@ async def run(plan):
         
         # ✅ 스트림 끝나면 전체 텍스트 조합
         summary = "".join(summary_parts).strip()
-        law_url = f"https://www.law.go.kr/법령/{urllib.parse.quote(law_name)}/{article_display(article_number)}"
+        law_url = f"https://www.law.go.kr/법령/{urllib.parse.quote(cite_law)}" + (
+            f"/{article_display(cite_art)}" if cite_art else ""
+        )
 
         # ✅ 출력 포맷 (Markdown 하이퍼링크 적용)
         if is_direct_article_query:
@@ -781,7 +788,7 @@ async def run(plan):
             footer = (
                 f"\n\n📘 **법령 정보**  \n"
                 f"시행일자: {enforcement_date or '정보 없음'}  \n"
-                f"출처: [{law_name} {article_display(article_number)}]({law_url})"
+                f"출처: [{cite_law} {article_display(cite_art)}]({law_url})"
             )
             yield ToolChunk(type="text", payload=footer)
         else:
