@@ -84,10 +84,21 @@ def require_admin_key(x_admin_key: str = Header(None)):
 
 @app.post("/api/admin/update-laws", tags=["admin"], dependencies=[Depends(require_admin_key)])
 async def trigger_law_update():
-    """법령 즉시 최신화 (수동 트리거)"""
-    from app.services.law_scheduler import run_law_update
+    """법령 즉시 최신화 (수동 트리거).
+
+    #86: 예전엔 `asyncio.create_task(run_law_update())`로 참조를 버렸다 — 이벤트 루프의
+    약한 참조만 남아 GC될 수 있고, 예외는 아무도 읽지 않았고, 연타하면 전체 재임베딩이
+    동시에 여러 개 돌았다. Task는 app.state에 들고, 실행 중이면 409로 거절한다.
+    """
     import asyncio
-    asyncio.create_task(run_law_update())
+    from app.services.law_scheduler import law_update_running, run_law_update
+
+    if law_update_running():
+        raise HTTPException(status_code=409, detail="법령 최신화가 이미 실행 중입니다.")
+
+    task = asyncio.create_task(run_law_update())
+    task.add_done_callback(lambda t: t.cancelled() or t.exception())  # 예외를 '관측'해 미회수 경고를 막는다 (로그는 run_law_update가 남김)
+    app.state.law_update_task = task
     return {"status": "started", "message": "법령 최신화가 백그라운드에서 시작됐습니다."}
 
 

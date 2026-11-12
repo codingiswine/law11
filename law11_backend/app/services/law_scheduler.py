@@ -10,6 +10,7 @@ FastAPI lifespan에서 start/stop된다.
 수동 트리거: POST /api/admin/update-laws
 """
 
+import asyncio
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -34,18 +35,32 @@ from app.services.backup_service import backup_chat_history
 
 _scheduler: Optional[AsyncIOScheduler] = None
 
+# 법령 최신화는 수 분짜리 재임베딩이다. 주간 cron과 수동 트리거(POST /api/admin/update-laws)가
+# 같은 함수를 부르므로, 둘이 겹치거나 수동 POST가 연타되면 AsyncLawUpdater 두 개가 동시에
+# PG upsert·Qdrant 삭제를 섞어 돌린다 (#86). 한 번에 하나만.
+_law_update_lock = asyncio.Lock()
 
-async def run_law_update():
-    """법령 최신화 실행 — 스케줄러 & 수동 트리거 공용"""
-    started_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-    logger.info(f"[LawScheduler] 법령 최신화 시작: {started_at}")
-    try:
-        async with AsyncLawUpdater() as updater:
-            await updater.update_all()
-        logger.info("[LawScheduler] 법령 최신화 완료")
-    except Exception as e:
-        logger.error(f"[LawScheduler] 법령 최신화 실패: {e}")
-        raise
+
+def law_update_running() -> bool:
+    return _law_update_lock.locked()
+
+
+async def run_law_update() -> bool:
+    """법령 최신화 실행 — 스케줄러 & 수동 트리거 공용. 이미 실행 중이면 건너뛰고 False."""
+    if _law_update_lock.locked():
+        logger.warning("[LawScheduler] 법령 최신화가 이미 실행 중 — 이번 호출은 건너뜀")
+        return False
+    async with _law_update_lock:
+        started_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+        logger.info(f"[LawScheduler] 법령 최신화 시작: {started_at}")
+        try:
+            async with AsyncLawUpdater() as updater:
+                await updater.update_all()
+            logger.info("[LawScheduler] 법령 최신화 완료")
+        except Exception as e:
+            logger.error(f"[LawScheduler] 법령 최신화 실패: {e}")
+            raise
+    return True
 
 
 async def run_case_law_update():
