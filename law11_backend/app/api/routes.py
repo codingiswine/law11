@@ -51,7 +51,10 @@ def evaluate_answer_quality(answer: str) -> dict:
 async def save_chat_history(user_id: str, question: str, answer: str, tool: str, session_id: Optional[str] = None) -> int:
     eval_ = evaluate_answer_quality(answer)
     effective_session = session_id or "law11_session"
-    turn_index = int(time.time())
+    # ⚠️ 1초 해상도(int(time.time()))였다 — 같은 세션에서 1초 안에 두 저장이 겹치면 turn_index가
+    # 같아져 db_query_tool의 `a.turn_index = u.turn_index + 1` 조인이 질문-답변을 교차로 짝지었다 (#85).
+    # ponytail: ns 타임스탬프. 같은 세션의 두 저장이 같은 ns에 떨어질 때만 충돌 — 그게 보이면 세션별 카운터로.
+    turn_index = time.time_ns()
     metadata_json = json.dumps({"tool": tool})
 
     insert_row = text("""
