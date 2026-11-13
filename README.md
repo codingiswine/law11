@@ -235,7 +235,7 @@ async def _load_session_context(session_id: str, limit: int = 5) -> str:
 RAGAS 기반 오프라인 평가 + 라우터·검색·할루시네이션·멀티턴 회귀 eval. 평가 구조, 실행 명령, 베이스라인 이력, 부하 테스트 상세: [docs/eval.md](docs/eval.md)
 
 - **골든셋 30케이스** (`eval/golden_dataset.json`, 13건 오염 교정 후 — #25): 개념형 13 · 기준/설치 10 · 직접 조문 4 · 처벌 3
-- **메트릭**: RAGAS 4종 — Faithfulness · Answer Relevancy · Context Precision · Context Recall (판정기 `JUDGE_MODEL`=`gpt-4o-mini`, 생성기 `LLM_MODEL`과 분리 — #57, ragas 0.1.21) + 검색 Top-k · 라우터 정확도 · 할루시네이션/Citation · 멀티턴 시나리오 5개(mutation test 검증)
+- **메트릭**: RAGAS 4종 — Faithfulness · Answer Relevancy · Context Precision · Context Recall (판정기 `JUDGE_MODEL`=`gpt-4o-mini`, 생성기 `LLM_MODEL`과 분리 — #57, ragas 0.1.21) + 검색 Top-k · 라우터 정확도 · 할루시네이션/Citation · 멀티턴 시나리오 13개(mutation test 검증)
 - **회귀 판정** (`python -m eval.harness --compare`): 직전 baseline 대비 **지표별** 판정선 이상 하락 시 exit 1 — answer relevancy 3.2% · context recall 2.2% · context precision 2.0%. 판정선은 상수가 아니라 같은 조건 3회 실측 노이즈의 2배로 **파생**되며(하한 2%), 노이즈 상수를 갱신하면 함께 따라온다. faithfulness는 노이즈가 19.3%(2026-11-04 실측)라 2배가 38.7%가 되어 탐지력이 없으므로 **단일 실행 판정에서 제외**하고 `--repeat`으로만 본다. 판정선이 노이즈 아래로 내려가면 pytest가 막는다 (`eval/gates.py`, `tests/test_eval_gates.py`, 산출 근거 #74)
 - **노이즈 먼저 측정** (`--repeat N`): 같은 설정을 N회 돌려 평균·최소·최대·상대범위를 출력한다. 조건이 바뀌면 노이즈도 바뀌므로(v1 2.50% ↔ v3 8.45%) 변경 전후를 비교하기 전에 먼저 실행한다 (#59). `baseline_*.json`의 `per_case_results`에는 케이스별 RAGAS 점수가 함께 남아, 집계가 흔들렸을 때 어느 케이스가 움직였는지 추적할 수 있다 (#77)
 - **판정기 흔들림 확인** (`python -m eval.eval_hallucination --repeat N`): 같은 입력을 N회 판정해 **케이스별 이력**을 낸다 — 매회 지적되는 케이스(조문 대조 대상)와 회차마다 뒤집히는 케이스(판정기 불안정)를 구분한다. 반복성은 신호이지 증거가 아니다. #72에서 GS-024는 3/3 반복된 실제 결함이었고, GS-004는 3/3 반복된 오탐이었다 (#77)
