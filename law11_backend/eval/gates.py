@@ -25,6 +25,11 @@ from typing import Dict, Set, Tuple
 # (#72). eval/results/baseline_20261104_{1747,1801,1821}_full.json 에서 재계산
 # 가능하다.
 #
+# 2026-11-17 재측정(#105, 조문 1,641 + 별표 93, baseline_20261117_{1809,1831,1847}):
+#   faithfulness 4.26% · answer_relevancy 1.28% · context_precision 0.18% · context_recall 3.05%.
+#   노이즈는 조건마다 다르다(#59: 3.4배). 3회 표본 하나로 줄이지 않고 **지표별로 두 측정 중 큰 값**을 쓴다
+#   — 그래서 바뀐 것은 context_recall(1.10% → 3.05%)뿐이고, faithfulness는 19.3%를 유지해 계속 판정 제외다.
+#
 # ⚠️ 이 표가 2026-10-19 측정(#59)에 머물러 있던 동안 판정선 3개가 노이즈보다
 #    작았고, faithfulness는 실제로 오탐했다: 0.7960 → 0.6689는 −15.97%로 당시
 #    판정선 0.15를 넘겨 `❌ REGRESSION` + exit 1이 났는데, 그 값은 같은 설정
@@ -35,9 +40,9 @@ MEASURED_NOISE: Dict[str, float] = {
     "faithfulness":      0.1933,
     "answer_relevancy":  0.0159,
     "context_precision": 0.0030,
-    "context_recall":    0.0110,
+    "context_recall":    0.0305,   # 2026-11-17 (#105) — 11-04의 0.0110보다 커서 교체
 }
-MEASURED_NOISE_DATE = "2026-11-04"
+MEASURED_NOISE_DATE = "2026-11-17"
 MEASURED_NOISE_RUNS = 3
 
 # 노이즈가 0에 가까운 지표(context_precision은 0.993~0.996의 천장 근처라 0.30%)에

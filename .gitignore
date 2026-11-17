@@ -84,6 +84,9 @@ law11_backend/eval/results/*.json
 !law11_backend/eval/results/baseline_20261104_1747_full.json
 !law11_backend/eval/results/baseline_20261104_1801_full.json
 !law11_backend/eval/results/baseline_20261104_1821_full.json
+!law11_backend/eval/results/baseline_20261117_1809_full.json
+!law11_backend/eval/results/baseline_20261117_1831_full.json
+!law11_backend/eval/results/baseline_20261117_1847_full.json
 !law11_backend/eval/results/hallucination_report.json
 # 3회 반복 판정 근거 — README가 인용하는 '3회 동일' 수치의 출처 (#77·#78)
 !law11_backend/eval/results/hallucination_repeat.json

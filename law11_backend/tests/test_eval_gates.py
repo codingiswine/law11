@@ -166,21 +166,25 @@ from pathlib import Path
 
 RESULTS_DIR = Path(__file__).parent.parent / "eval" / "results"
 
-# #72의 반복 측정 3회. 커밋돼 있어야 MEASURED_NOISE가 재현 가능하다
-# (results/*.json은 .gitignore 대상이라 이 셋만 force-add 했다).
-NOISE_BASIS_FILES = [
-    "baseline_20261104_1747_full.json",
-    "baseline_20261104_1801_full.json",
-    "baseline_20261104_1821_full.json",
+# 반복 측정 3회짜리 묶음들 — #72(11-04)와 #105(11-17). 커밋돼 있어야 MEASURED_NOISE가
+# 재현 가능하다(.gitignore에 파일명 단위 예외). 노이즈는 조건마다 달라서(#59) 상수는
+# **지표별로 묶음 중 가장 큰 노이즈**다 — 최근 3회 하나로 줄이면 faithfulness 19.3%가 4.3%로
+# 내려가 판정 제외가 풀린다.
+NOISE_BASIS_SETS = [
+    ["baseline_20261104_1747_full.json", "baseline_20261104_1801_full.json", "baseline_20261104_1821_full.json"],
+    ["baseline_20261117_1809_full.json", "baseline_20261117_1831_full.json", "baseline_20261117_1847_full.json"],
 ]
 
 
 def _load_basis_metrics():
-    paths = [RESULTS_DIR / name for name in NOISE_BASIS_FILES]
-    missing = [p.name for p in paths if not p.exists()]
-    if missing:
-        pytest.skip(f"노이즈 근거 파일 없음: {missing}")
-    return [json.loads(p.read_text(encoding="utf-8"))["metrics"] for p in paths]
+    sets = []
+    for names in NOISE_BASIS_SETS:
+        paths = [RESULTS_DIR / name for name in names]
+        missing = [p.name for p in paths if not p.exists()]
+        if missing:
+            pytest.skip(f"노이즈 근거 파일 없음: {missing}")
+        sets.append([json.loads(p.read_text(encoding="utf-8"))["metrics"] for p in paths])
+    return sets
 
 
 @pytest.mark.parametrize("metric", sorted(MEASURED_NOISE))
@@ -190,10 +194,10 @@ def test_measured_noise_matches_its_basis_files(metric):
     이게 깨지면 노이즈를 재측정했는데 상수를 안 고친 것이다 — 판정선이 그 상수에서
     파생되므로 판정선도 같이 낡는다. 허용 오차는 반올림분(0.5%p)만 둔다.
     """
-    runs = _load_basis_metrics()
-    vals = [m[metric] for m in runs]
-    mean = sum(vals) / len(vals)
-    actual = (max(vals) - min(vals)) / mean
+    actual = 0.0
+    for runs in _load_basis_metrics():
+        vals = [m[metric] for m in runs]
+        actual = max(actual, (max(vals) - min(vals)) / (sum(vals) / len(vals)))
     assert abs(actual - MEASURED_NOISE[metric]) < 0.005, (
         f"{metric}: 상수 {MEASURED_NOISE[metric]:.4f} vs 근거 파일 재계산 {actual:.4f} — "
         f"gates.MEASURED_NOISE를 갱신할 것 (판정선은 거기서 파생되므로 함께 따라온다)"
