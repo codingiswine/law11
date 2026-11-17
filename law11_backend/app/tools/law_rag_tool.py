@@ -539,6 +539,39 @@ def enforcement_notice(enforcement_date, today=None) -> str:
 # 같은 다른 법의 벌칙을 가져다 썼다. 처벌 질문이면 질문 또는 직전 답변이 인용한 조문의
 # 번호를 참조하는 벌칙·과태료 조문을 PostgreSQL에서 꺼내 검색 결과 맨 앞에 넣는다.
 _PENALTY_Q = re.compile(r"처벌|벌칙|벌금|징역|과태료|형량|형사")
+
+# "이 법 적용 맞아?" / "A법 적용했는데 잘한 거야?" (#107) — 실무자 질문의 다수 유형
+_APPLY_Q = re.compile(r"적용.{0,15}(맞|옳|잘|괜찮|되나|되는지|거야|건가|건지)|잘한|잘못")
+_WORKPLACE_LAWS = set(_LAW_FAMILY[normalize_law_name("산업안전보건법")])
+_FACILITY_LAWS = {normalize_law_name(l) for fam in _PERIPHERAL.values() for l in fam}
+SCOPE_NOTE = """
+⚠️ [적용 대상 확인 — 이 질문에서는 아래 규칙이 출력 형식보다 우선한다]
+제공된 조문에는 적용 대상이 다른 두 계열이 섞여 있다.
+  · 사업장 기준: 산업안전보건법·시행령·시행규칙·산업안전보건기준에관한규칙 — "사업주"가 "근로자"를 위해 지키는 기준
+  · 건축물·시설 기준: 건축·건축물관리·시설물·소방·체육시설 계열 — 건축물·시설 자체(이용자 포함)에 대한 기준
+1. 질문의 대상이 사업장(근로자의 작업장소)인지 일반 건축물·시설(청사·공공건물·다중이용시설 등)인지 먼저 판단한다.
+2. 대상이 분명하면 그 대상에 맞는 계열을 결론의 근거로 쓰고, 다른 계열은 "근로자의 작업장소라면 …도 적용된다"처럼 조건을 붙여 덧붙인다.
+3. 대상을 가릴 수 없으면 결론을 "사업장이라면 …, 일반 건축물이라면 …"으로 나눠 쓰고, [법적 근거]에 두 계열 조문을 모두 인용한다.
+4. 질문이 어떤 법령을 적용하는 게 맞는지·잘한 건지 물으면, 그 법령의 적용 대상이 질문의 대상과 맞는지로 결론을 낸다.
+   사업장 기준 법령을 근로자 작업장소가 아닌 일반 건축물에 적용했다면 "맞다"고 단정하지 않는다.
+5. 어느 경우든 건축물·시설 기준 조문 중 질문과 관련된 조문은 [법적 근거]에 인용한다 — "함께 검색된 조문"으로 남기지 않는다.
+   두 계열을 잇는 조문(예: "「산업안전보건법」에 의한 작업장에 설치하는 계단인 경우에는 …")이 있으면 그 문구를 인용해 구분의 근거로 쓴다.
+"""
+
+
+def scope_note(articles: list) -> str:
+    """사업장 기준과 건축물·시설 기준 조문이 함께 검색됐을 때만 답변 프롬프트에 붙일 안내문 (#107).
+    SYSTEM_PROMPT(수정 금지)는 그대로 두고, 섞인 경우에만 작동한다."""
+    laws = {normalize_law_name(a["law_name"]) for a in articles}
+    return SCOPE_NOTE if laws & _WORKPLACE_LAWS and laws & _FACILITY_LAWS else ""
+
+
+def strip_law_name(query: str, law_norm: str) -> str:
+    """질문에서 인식된 법령명(약칭 포함)과 바로 뒤 조문번호를 지운다 — 법령명 없이 다시 검색하기 위해 (#107)."""
+    sep = r"[\s「」『』\"'“”‘’·ㆍ]*"
+    names = [law_norm] + [al for al, full in _LAW_ALIASES if full == law_norm]
+    pat = "|".join(sep.join(map(re.escape, n)) for n in sorted(names, key=len, reverse=True))
+    return re.sub(rf"(?:{pat}){sep}(?:상의|상|의|에서의|에서)?\s*(?:제?\s*\d+\s*조(?:의\s*\d+)?(?:\s*제?\s*\d+\s*항)?)?", " ", query).strip()
 _KNOWN_LAWS = (
     "산업안전보건기준에관한규칙", "산업안전보건법시행규칙", "산업안전보건법시행령", "산업안전보건법",
     "재난및안전관리기본법시행규칙", "재난및안전관리기본법시행령", "재난및안전관리기본법",
@@ -956,6 +989,17 @@ async def run(plan):
             found.source, found.law_name = "qdrant", None   # 벌칙+원 조문을 한 번에 근거로 — Ⓐ 경로
             found.steps.append("⚖️ 벌칙 조문 조회: " + ", ".join(
                 f"{p['law_name']} {article_display(p['article_number'])}" for p in pen))
+    # "A법 적용 맞아?" — 법령명을 찍으면 그 계열만 검색돼 다른 계열(사업장 ↔ 건축물·시설)과 비교할 근거가 없었다.
+    # 법령명을 빼고 한 번 더 검색해 다른 법령 조문을 함께 근거로 넘긴다 (#107).
+    if _APPLY_Q.search(query) and found.law_name and found.source in ("pg", "qdrant"):
+        alt = await search_law_articles(strip_law_name(query, found.law_name))
+        have = {(a["law_name"], a["article_number"]) for a in found.articles}
+        extra = [a for a in alt.articles if (a["law_name"], a["article_number"]) not in have] if alt.source == "qdrant" else []
+        if extra:
+            found.articles = found.articles[:3] + extra[:3]
+            found.source, found.law_name = "qdrant", None   # 여러 조문을 한 번에 근거로 — Ⓐ 경로
+            found.steps.append("⚖️ 적용 법령 확인: 법령명 없이 다시 검색 — " + ", ".join(
+                f"{a['law_name']} {article_display(a['article_number'])}" for a in extra[:3]))
     for step in found.steps:
         yield ToolChunk(type="status", payload=step)
 
@@ -1019,7 +1063,7 @@ async def run(plan):
         prompt = f"""너는 대한민국 산업안전보건 법령 전문가야.
 사용자 질문: "{query}"
 아래 법령 조문을 반드시 인용하여 실무 중심으로 답변해.
-⚠️ 법적 근거(조문 원문 인용) 외의 모든 설명은 반드시 존댓말(합쇼체)로 작성해.
+{scope_note(found.articles)}⚠️ 법적 근거(조문 원문 인용) 외의 모든 설명은 반드시 존댓말(합쇼체)로 작성해.
 ⚠️ [관련 법령 조문]에 제공된 조문은 전부 검토하고, 답변 내용에 실제로 사용한
    조문은 빠짐없이 [법적 근거]에 포함해 — 일부만 골라 인용하고 나머지 조문
    내용을 출처 없이 요약·적용 기준에 섞어 넣지 마.

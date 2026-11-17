@@ -137,3 +137,31 @@ def test_answer_prompts_forbid_filling_delegated_numbers():
 def test_expand_legal_terms_noop_without_trigger():
     q = "안전관리자 선임 기준은?"
     assert law_rag_tool.expand_legal_terms(q) == q
+
+
+def test_scope_note_only_when_workplace_and_facility_laws_mix():
+    """#107: 계단 질문에 피난·방화구조 규칙이 검색돼도 답변은 사업장 기준만 인용했다.
+    두 계열이 섞일 때만 안내문을 붙이고, 한 계열뿐이면 프롬프트를 건드리지 않는다."""
+    w = {"law_name": "산업안전보건기준에관한규칙"}
+    f = {"law_name": "건축물의피난방화구조등의기준에관한규칙"}
+    assert law_rag_tool.scope_note([w, f]) == law_rag_tool.SCOPE_NOTE
+    assert law_rag_tool.scope_note([w, {"law_name": "산업안전보건법"}]) == ""
+    assert law_rag_tool.scope_note([f, {"law_name": "건축법시행령"}]) == ""
+
+
+def test_apply_question_pattern():
+    a = law_rag_tool._APPLY_Q
+    for q in ["오래된 건물 계단에 산업안전보건기준에 관한 규칙 적용하는 게 맞아?",
+              "청사 난간에 안전보건규칙 제13조를 적용했는데 잘한 거야?",
+              "그렇다면 수영장 크기는 상관 없이 제5조 1항을 적용하는거야?"]:
+        assert a.search(q), q
+    for q in ["계단 안전성 평가는 어떻게 해?", "산안법 제38조 적용 대상은?"]:
+        assert not a.search(q), q
+
+
+def test_strip_law_name_removes_name_alias_and_bound_article():
+    s = law_rag_tool.strip_law_name
+    law = "산업안전보건기준에관한규칙"
+    assert "규칙" not in s("오래된 건물 계단 평가에 산업안전보건기준에 관한 규칙 적용하는 게 맞아?", law)
+    out = s("청사 계단 난간에 안전보건규칙 제13조를 적용했는데 잘한 거야?", law)
+    assert "안전보건규칙" not in out and "13" not in out and "계단 난간" in out
