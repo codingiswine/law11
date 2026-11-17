@@ -47,10 +47,10 @@ async def test_citation_uses_the_article_the_search_found_not_the_query():
     chunks = await _collect(_found_branch3())
 
     meta = next(c.payload for c in chunks if c.type == "meta")
-    assert meta["citations"] == [{"law_name": "산업안전보건법", "article_number": "17", "score": 1.0, "rank": 1}], \
-        "질문에 없던 조문번호는 검색 결과(best)에서 와야 한다"
+    # #102부터 ③은 여러 조문을 근거로 쓰는 Ⓐ 경로로 간다 — 점수는 검색 유사도 그대로다.
+    assert meta["citations"] == [{"law_name": "산업안전보건법", "article_number": "17", "score": 0.81, "rank": 1}], \
+        "질문에 없던 조문번호는 검색 결과에서 와야 한다"
+    assert all(c["article_number"] for c in meta["citations"]), "빈 조문 인용 (#82 회귀)"
 
     source = next(c.payload for c in chunks if c.type == "source")
-    assert source["law_url"].endswith("/제17조")
-    assert "제조" not in source["law_url"], "article_display('')가 만든 빈 조문 URL"
     assert source["retrieved_laws"] == meta["citations"]

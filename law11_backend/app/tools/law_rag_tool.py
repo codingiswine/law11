@@ -329,6 +329,18 @@ _CONDITION_LAW_MAP = [
     ({"안전보건교육", "교육시간", "정기교육", "채용시교육", "특별교육"}, ("산업안전보건법", "산업안전보건법시행규칙")),
 ]
 
+# 법률명이 인식되면 그 위임 법령까지 같은 계열로 본다 — "산안법상 안전관리자 몇 명?"의 답은 시행령 별표3이다.
+# 시행령·규칙을 직접 지목한 질문은 계열을 넓히지 않는다.
+_LAW_FAMILY = {
+    normalize_law_name("산업안전보건법"): [normalize_law_name(l) for l in (
+        "산업안전보건법", "산업안전보건법시행령", "산업안전보건법시행규칙", "산업안전보건기준에관한규칙")],
+    normalize_law_name("재난및안전관리기본법"): [normalize_law_name(l) for l in (
+        "재난및안전관리기본법", "재난및안전관리기본법시행령", "재난및안전관리기본법시행규칙")],
+    normalize_law_name("중대재해처벌등에관한법률"): [normalize_law_name(l) for l in (
+        "중대재해처벌등에관한법률", "중대재해처벌등에관한법률시행령")],
+}
+
+
 def get_priority_law(query: str) -> Optional[list]:
     """키워드 조건에 따라 우선 검색할 법령_norm 목록 반환. 없으면 None."""
     q = re.sub(r"\s+", "", query)
@@ -641,26 +653,31 @@ async def search_law_articles(query: str, prior_question: str = "") -> LawSearch
         found.source = "db_error"
         return found
 
-    # ③ 법령명만 인식 → 해당 법령 안에서만 의미 검색
+    # ③ 법령명만 인식 → 그 법령 계열(법률이면 하위 시행령·시행규칙 포함) 안에서 의미 검색
+    # 예전에는 정확히 그 법령 하나에서 최상위 1건만 썼다. 외부 질의(고용노동부 법령해석)는
+    # "「산업안전보건법」상 ~"으로 시작하면서 정답이 시행령 제16조(별표3)인 경우가 많아,
+    # 법률 본문만 뒤져 엉뚱한 조문 1건을 넘기고 있었다 — dev 6건 중 1건 적중 (#102).
     found.steps.append("🧠 [Qdrant] 벡터 검색 중...")
     try:
         embedding = await get_embedding_async(expand_legal_terms(embed_text))
-        q_filter = Filter(must=[FieldCondition(key="law_name_norm", match=MatchValue(value=law_norm))])
+        family = _LAW_FAMILY.get(law_norm, [law_norm])
+        q_filter = Filter(must=[FieldCondition(key="law_name_norm", match=MatchAny(any=family))])
         results = (await qdrant.search(COLLECTION, embedding, query_filter=q_filter, limit=10, with_payload=True))[:5]
         # 0.50: 이미 법령명으로 범위를 좁혔는데 여기서도 미달이면
         # 해당 법령 DB에 답이 없다는 신호 → web fallback이 더 정확.
         # ①(0.45)보다 엄격한 이유: 검색 범위가 좁을수록 낮은 score = 진짜 없음.
         if results and results[0].score >= 0.5:
-            best = results[0]
             found.source = "qdrant"
-            found.enforcement_date = best.payload.get("enforcement_date", "")
-            found.articles = [{
-                "law_name": best.payload.get("law_name", law_name),
-                "article_number": best.payload.get("article_number_norm", ""),
-                "text": best.payload.get("text", ""),
-                "score": best.score,
-            }]
-            found.steps.append(f"✅ [Qdrant] 유사도 {best.score:.2f} 조문 발견")
+            found.enforcement_date = results[0].payload.get("enforcement_date", "")
+            seen = set()
+            for hit in results:
+                text_val = hit.payload.get("text", "")
+                key = (hit.payload.get("law_name", law_name), hit.payload.get("article_number_norm", ""))
+                if text_val and key not in seen:
+                    seen.add(key)
+                    found.articles.append({"law_name": key[0], "article_number": key[1],
+                                           "text": text_val, "score": hit.score})
+            found.steps.append(f"✅ [Qdrant] 유사도 {results[0].score:.2f} 조문 {len(found.articles)}개 발견")
             return found
     except Exception as e:
         print(f"⚠️ Qdrant 검색 실패: {e}")
@@ -806,8 +823,9 @@ async def run(plan):
             yield chunk
         return
 
-    # Ⓐ 법령명 미인식 + 의미 검색 성공 → 검색된 여러 조문을 한 번에 근거로 답변
-    if not law_name:
+    # Ⓐ 의미 검색 성공(법령명 미인식, 또는 법령명만 인식한 ③ 계열 검색) → 검색된 여러 조문을 한 번에 근거로 답변
+    # ③이 1건만 넘기던 시절엔 Ⓑ로 갔다. 계열 검색으로 여러 조문을 받으면서 Ⓑ에 두면 첫 조문만 쓰게 된다 (#102).
+    if not law_name or (found.source == "qdrant" and not found.article_number):
         citations = [
             {"law_name": a["law_name"], "article_number": a["article_number"],
              "score": round(a["score"], 4), "rank": rank}

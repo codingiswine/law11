@@ -119,18 +119,42 @@ async def test_no_law_name_above_threshold_returns_deduped_articles():
 
 
 @pytest.mark.asyncio
-async def test_law_name_only_uses_stricter_threshold_and_single_article():
-    """법령명만 인식 → 해당 법령 안에서만 검색, threshold 0.5, 최상위 1건.
+async def test_law_name_only_searches_law_family_and_returns_deduped_articles():
+    """법령명만 인식 → 그 법률과 하위 시행령·시행규칙 안에서 검색, threshold 0.5, 상위 조문들.
 
-    회귀: 평가 경로에 이 경로가 없어서 priority 필터 + 0.45로 5건을
-    넘기고 있었다 (GS-026 '재난'의 정의 — 운영은 1건).
+    회귀(#102): 법률 하나에서 최상위 1건만 쓰던 시절, "「산업안전보건법」상 안전관리자 몇 명"이
+    법률 본문 1건만 받고 정답인 시행령 제16조(별표3)에 닿지 못했다 — 외부 dev 6건 중 1건 적중.
     """
-    hits = [_hit("재난및안전관리기본법", "3", 0.5907), _hit("재난및안전관리기본법", "2", 0.55)]
-    with _patch([hits]):
-        found = await search_law_articles("재난및안전관리기본법에서 '재난'의 정의는?")
+    captured = {}
+    hits = [_hit("산업안전보건법시행령", "16", 0.62), _hit("산업안전보건법", "17", 0.60),
+            _hit("산업안전보건법", "17", 0.58)]
+
+    async def _search(*_a, query_filter=None, **_kw):
+        captured["any"] = query_filter.must[0].match.any
+        return hits
+
+    with _patch([]), patch.object(law_rag_tool, "qdrant", SimpleNamespace(search=_search)):
+        found = await search_law_articles("「산업안전보건법」상 안전관리자는 몇 명 선임해야 하나요?")
     assert found.source == "qdrant"
-    assert len(found.articles) == 1
-    assert found.articles[0]["article_number"] == "3"
+    assert set(captured["any"]) == {"산업안전보건법", "산업안전보건법시행령",
+                                    "산업안전보건법시행규칙", "산업안전보건기준에관한규칙"}
+    assert [(a["law_name"], a["article_number"]) for a in found.articles] == [
+        ("산업안전보건법시행령", "16"), ("산업안전보건법", "17"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_named_enforcement_decree_does_not_widen_to_family():
+    """시행령을 직접 지목하면 계열로 넓히지 않는다."""
+    captured = {}
+
+    async def _search(*_a, query_filter=None, **_kw):
+        captured["any"] = query_filter.must[0].match.any
+        return [_hit("산업안전보건법시행령", "16", 0.7)]
+
+    with _patch([]), patch.object(law_rag_tool, "qdrant", SimpleNamespace(search=_search)):
+        await search_law_articles("산업안전보건법 시행령에서 안전관리자 선임 기준은?")
+    assert captured["any"] == ["산업안전보건법시행령"]
 
 
 @pytest.mark.asyncio

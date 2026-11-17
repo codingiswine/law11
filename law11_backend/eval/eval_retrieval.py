@@ -33,7 +33,7 @@ sys.path.insert(0, str(BACKEND_ROOT))
 
 from app.config import settings
 from app.services.rag_service import get_embedding_async, search_qdrant_async
-from app.tools.law_rag_tool import expand_legal_terms
+from app.tools.law_rag_tool import expand_legal_terms, search_law_articles
 
 EVAL_DIR    = Path(__file__).parent
 RESULTS_DIR = EVAL_DIR / "results"
@@ -58,18 +58,25 @@ def article_matches(retrieved_articles: List[str], law_name: str, article_number
     return any(normalize(art) == expected for art in retrieved_articles)
 
 
-async def evaluate_single(question: str, accepted: List[tuple], k: int) -> Dict:
+async def evaluate_single(question: str, accepted: List[tuple], k: int, pipeline: bool = False) -> Dict:
     """accepted: [(law_name, article_number), ...] — 하나라도 검색되면 정답.
 
     넓은 실무 질문의 정답은 조문 집합일 수 있다 (인접 조문 분담: 도급 의무
     제63조+제64조, 법→시행규칙 위임: 교육시간은 시행규칙 제26조). 골든셋의
     accepted_articles 필드로 케이스별 인정 조문을 지정한다 — README #30.
     """
-    embedding = await get_embedding_async(expand_legal_terms(question))
-    results   = await search_qdrant_async(embedding, limit=k)
-
-    retrieved_articles = []
-    scores = []
+    if pipeline:
+        # 운영 경로 그대로(search_law_articles): 법령명 인식·우선 법령·threshold·PG 정확 매칭 포함.
+        # 운영이 LLM에 넘기는 조문 목록이 곧 검색 결과다 — 웹 폴백이면 빈 목록(미스).
+        found = await search_law_articles(question)
+        retrieved_articles = [f"{a['law_name']} 제{a['article_number']}조" for a in found.articles][:k]
+        scores = [a["score"] for a in found.articles][:k]
+        results = []
+    else:
+        embedding = await get_embedding_async(expand_legal_terms(question))
+        results   = await search_qdrant_async(embedding, limit=k)
+        retrieved_articles = []
+        scores = []
     for r in results:
         payload = r.get("payload", {})
         r_law   = payload.get("law_name", "")
@@ -94,7 +101,8 @@ async def evaluate_single(question: str, accepted: List[tuple], k: int) -> Dict:
     }
 
 
-async def run_eval(sample: Optional[int] = None, dataset_path: Path = GOLDEN_PATH, split: Optional[str] = None):
+async def run_eval(sample: Optional[int] = None, dataset_path: Path = GOLDEN_PATH, split: Optional[str] = None,
+                   pipeline: bool = False):
     if not dataset_path.exists():
         print(f"❌ 골든 데이터셋 없음: {dataset_path}")
         return
@@ -125,7 +133,7 @@ async def run_eval(sample: Optional[int] = None, dataset_path: Path = GOLDEN_PAT
 
         for k in TOP_K_VARIANTS:
             try:
-                res = await evaluate_single(q, accepted, k)
+                res = await evaluate_single(q, accepted, k, pipeline)
                 all_results[k].append(res)
             except Exception as e:
                 print(f"         ❌ top-k={k} 오류: {e}")
@@ -191,6 +199,8 @@ async def run_eval(sample: Optional[int] = None, dataset_path: Path = GOLDEN_PAT
 
     out_path = RESULTS_DIR / ("retrieval_eval.json" if dataset_path == GOLDEN_PATH
                               else f"retrieval_eval_{dataset_path.stem}_{split or 'all'}.json")
+    if pipeline:
+        out_path = out_path.with_name(out_path.stem + "_pipeline.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
     print(f"  저장 완료 → {out_path}\n")
@@ -201,5 +211,6 @@ if __name__ == "__main__":
     parser.add_argument("--sample", type=int, default=None)
     parser.add_argument("--dataset", type=Path, default=GOLDEN_PATH)
     parser.add_argument("--split", choices=["dev", "test"], default=None)
+    parser.add_argument("--pipeline", action="store_true", help="Qdrant 단독 대신 운영 검색 함수(search_law_articles)로 측정")
     args = parser.parse_args()
-    asyncio.run(run_eval(sample=args.sample, dataset_path=args.dataset, split=args.split))
+    asyncio.run(run_eval(sample=args.sample, dataset_path=args.dataset, split=args.split, pipeline=args.pipeline))
