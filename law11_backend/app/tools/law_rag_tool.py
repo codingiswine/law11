@@ -183,6 +183,9 @@ def normalize_article(article: str) -> str:
     스킴("N" 또는 "N의M")을 유지해야 한다 — law_updater_async와 한 쌍.
     """
     s = article or ""
+    a = re.search(r"별표\s*(\d+)(?:\s*의\s*(\d+))?(?:\s*#\s*(\d+))?", s)
+    if a:   # 별표 key (#104) — "별표3" / "별표21의2" / 청크 "별표3#2". law_updater_async.annex_norm과 한 쌍
+        return f"별표{a.group(1)}" + (f"의{a.group(2)}" if a.group(2) else "") + (f"#{a.group(3)}" if a.group(3) else "")
     m = re.search(r"(\d+)\s*(?:조)?\s*의\s*(\d+)", s)
     if m:
         return f"{m.group(1)}의{m.group(2)}"
@@ -190,7 +193,9 @@ def normalize_article(article: str) -> str:
 
 
 def article_display(norm: str) -> str:
-    """norm("14" | "14의2") → 표시형("제14조" | "제14조의2")"""
+    """norm("14" | "14의2" | "별표3#2") → 표시형("제14조" | "제14조의2" | "별표 3")"""
+    if (norm or "").startswith("별표"):
+        return norm.split("#")[0].replace("별표", "별표 ")
     n, _, b = (norm or "").partition("의")
     return f"제{n}조의{b}" if b else f"제{n}조"
 
@@ -263,6 +268,79 @@ def bound_article_number(query: str, law_name: str) -> str:
     if not m:
         return ""
     return m.group(1) + (f"의{m.group(2)}" if m.group(2) else "")
+
+
+def bound_annex_number(query: str, law_name: str) -> str:
+    """인식한 법령명 바로 뒤의 "별표 N(의M)" → 별표 key("별표3"). 없으면 "" (#104)."""
+    m = re.search(re.escape(law_name) + r"(?:상의|상|의|에서의|에서)?\[?별표(\d+)(?:의(\d+))?", _compact(query))
+    if not m:
+        return ""
+    return f"별표{m.group(1)}" + (f"의{m.group(2)}" if m.group(2) else "")
+
+
+_ANNEX_REF = re.compile(r"별표\s*(\d+)(?:\s*의\s*(\d+))?")
+MAX_ATTACHED_ANNEXES = 2
+
+
+SMALL_ANNEX_CHUNKS = 3
+
+
+async def _expand_small_annexes(found) -> None:
+    """작은 별표(청크 3개 이하)는 검색된 청크 하나 대신 별표 전체를 넘긴다 (#104).
+
+    실측: "정기 안전보건교육 몇 시간?"이 별표 4의 2/2 청크(특별교육)를 1위로 올리고, 답(매반기
+    6·12시간)이 있는 1/2 청크는 빠졌다. 청크 경계는 질문과 무관하게 글자 수로 정해지므로, 작은
+    별표는 통째로 보는 편이 안전하다. 큰 별표(과태료·검사항목 표, 수십 청크)는 검색된 청크만 쓴다.
+    """
+    for a in found.articles:
+        norm = a["article_number"]
+        if not norm.startswith("별표") or "#" not in norm:
+            continue
+        key = norm.split("#")[0]
+        try:
+            async with async_engine.connect() as conn:
+                rows = (await conn.execute(text("""
+                    SELECT article_number_norm, text FROM law_chunks
+                    WHERE law_name_norm = :law AND article_number_norm LIKE :pat
+                """), {"law": normalize_law_name(a["law_name"]), "pat": f"{key}#%"})).fetchall()
+        except Exception as e:
+            print(f"⚠️ 별표 전체 조회 실패: {e}")
+            return
+        if 1 < len(rows) <= SMALL_ANNEX_CHUNKS:
+            rows = sorted(rows, key=lambda r: int(r[0].split("#")[1]))
+            a["text"] = "\n".join(r[1] for r in rows)
+
+
+async def _attach_annexes(found, embedding) -> None:
+    """검색된 조문이 "별표 N과 같다"로 끝나면 그 별표에서 질문과 가장 가까운 청크를 근거에 붙인다 (#104).
+
+    #46에서 기각한 '참조 조문 자동 추가'와 다르다 — 그때는 이미 있는 다른 조문을 더 넣었고(효과 0),
+    여기서는 조문이 위임한 **숫자 자체**가 근거에 없어서 "미확인 → 웹"(#98·#101)으로 새던 것을 채운다.
+    같은 법령의 별표만 붙인다("이 영 별표"). 이미 검색된 별표는 다시 붙이지 않는다.
+    """
+    have = {(a["law_name"], a["article_number"].split("#")[0]) for a in found.articles}
+    wanted = []
+    for a in list(found.articles):
+        if a["article_number"].startswith("별표"):
+            continue
+        for m in _ANNEX_REF.finditer(a.get("text", "")):
+            key = f"별표{m.group(1)}" + (f"의{m.group(2)}" if m.group(2) else "")
+            if (a["law_name"], key) not in have and (a["law_name"], key) not in wanted:
+                wanted.append((a["law_name"], key))
+    for law, key in wanted[:MAX_ATTACHED_ANNEXES]:
+        try:
+            hits = await qdrant.search(COLLECTION, embedding, limit=1, with_payload=True, query_filter=Filter(must=[
+                FieldCondition(key="law_name_norm", match=MatchValue(value=normalize_law_name(law))),
+                FieldCondition(key="annex", match=MatchValue(value=key))]))
+        except Exception as e:
+            print(f"⚠️ 별표 첨부 실패: {e}")
+            return
+        if hits:
+            h = hits[0]
+            found.articles.append({"law_name": h.payload.get("law_name", law),
+                                   "article_number": h.payload.get("article_number_norm", ""),
+                                   "text": h.payload.get("text", ""), "score": h.score,
+                                   "related_article": h.payload.get("related_article", ""), "attached": True})
 
 
 # ⚠️ 할루시네이션 방지: "OOO법 N조"처럼 구체적 법명+조문을 물었는데 그 법이
@@ -598,15 +676,20 @@ async def search_law_articles(query: str, prior_question: str = "") -> LawSearch
                 for hit in results:
                     text_val = hit.payload.get("text", "")
                     key = (hit.payload.get("law_name", ""), hit.payload.get("article_number_norm", ""))
-                    if text_val and key not in seen:   # 중복 조문 제거
-                        seen.add(key)
+                    # 중복 조문 제거 — 별표는 청크가 여럿이라 별표당 최상위 청크 하나만 (#104: 한 별표가 상위 5개를 독차지했다)
+                    dedup = (key[0], key[1].split("#")[0])
+                    if text_val and dedup not in seen:
+                        seen.add(dedup)
                         found.articles.append({
                             "law_name": key[0], "article_number": key[1],
                             "text": text_val, "score": hit.score,
+                            "related_article": hit.payload.get("related_article", ""),
                         })
                 # ✅ 화면에 표시되는 %(Qdrant 코사인 유사도)와 배지 순서가 일치하도록
                 # 코사인 점수 내림차순 정렬 유지
                 found.articles.sort(key=lambda a: a["score"], reverse=True)
+                await _attach_annexes(found, embedding)
+                await _expand_small_annexes(found)
                 found.source = "qdrant"
                 found.steps.append(f"✅ [Qdrant] 관련 조문 {len(found.articles)}개 발견")
                 return found
@@ -617,6 +700,29 @@ async def search_law_articles(query: str, prior_question: str = "") -> LawSearch
         return found
 
     law_norm = normalize_law_name(law_name)
+
+    # ②' 법령명 + 별표번호("시행령 별표 3") → 그 별표의 청크 안에서 의미 검색 (#104)
+    # 별표는 수십 청크로 나뉘기도 해서(과태료 표 등) 전체를 넘기지 않고 질문과 가까운 3개만 쓴다.
+    annex = bound_annex_number(query, law_name)
+    if annex:
+        found.steps.append(f"🧠 [Qdrant] {article_display(annex)} 검색 중...")
+        try:
+            embedding = await get_embedding_async(expand_legal_terms(embed_text))
+            q_filter = Filter(must=[FieldCondition(key="law_name_norm", match=MatchValue(value=law_norm)),
+                                    FieldCondition(key="annex", match=MatchValue(value=annex))])
+            hits = await qdrant.search(COLLECTION, embedding, query_filter=q_filter, limit=3, with_payload=True)
+            if hits:
+                found.source = "qdrant"
+                found.articles = [{"law_name": h.payload.get("law_name", law_name),
+                                   "article_number": h.payload.get("article_number_norm", ""),
+                                   "text": h.payload.get("text", ""), "score": h.score,
+                                   "related_article": h.payload.get("related_article", "")} for h in hits]
+                found.steps.append(f"✅ [Qdrant] {article_display(annex)} {len(hits)}개 청크 발견")
+                return found
+        except Exception as e:
+            print(f"⚠️ 별표 검색 실패: {e}")
+        found.source = "missing"
+        return found
 
     # ② 법령명 + 조문번호 → PostgreSQL 정확 매칭
     # (조문번호가 없으면 article_number_norm='' 로 조회하는 셈이라 어차피 0건 — 건너뛴다)
@@ -703,10 +809,14 @@ async def search_law_articles(query: str, prior_question: str = "") -> LawSearch
             for hit in results:
                 text_val = hit.payload.get("text", "")
                 key = (hit.payload.get("law_name", law_name), hit.payload.get("article_number_norm", ""))
-                if text_val and key not in seen:
-                    seen.add(key)
+                dedup = (key[0], key[1].split("#")[0])   # 별표당 청크 하나 (#104)
+                if text_val and dedup not in seen:
+                    seen.add(dedup)
                     found.articles.append({"law_name": key[0], "article_number": key[1],
-                                           "text": text_val, "score": hit.score})
+                                           "text": text_val, "score": hit.score,
+                                           "related_article": hit.payload.get("related_article", "")})
+            await _attach_annexes(found, embedding)
+            await _expand_small_annexes(found)
             found.steps.append(f"✅ [Qdrant] 유사도 {results[0].score:.2f} 조문 {len(found.articles)}개 발견")
             return found
     except Exception as e:

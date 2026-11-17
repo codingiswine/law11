@@ -1,3 +1,4 @@
+import { articleLabel } from "../utils/article";
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -107,7 +108,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({ role, content, messageId, fee
         <div style={{ marginTop: "12px", display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
           <span style={{ fontSize: "0.75rem", color: "#9ca3af" }}>참고 법령:</span>
           {sources.map((source, i) => {
-            const label = `${source.law_name} 제${source.article_number}조`;
+            const label = `${source.law_name} ${articleLabel(source.article_number)}`;
             const scorePercent = source.score != null ? Math.round(source.score * 100) : null;
             return (
               <button

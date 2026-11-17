@@ -269,6 +269,104 @@ def extract_article_payloads(law_name: str, drf_json: dict) -> List[dict]:
     return payloads
 
 
+# ── 별표 (#104) ────────────────────────────────────────────────
+# 조문 본문은 "별표 3과 같다"로 끝나고 숫자(안전관리자 수·교육시간)는 별표에 있다. 예전엔
+# 조문단위만 수집해 별표가 DB에 없었고, 그런 질문은 "미확인 → 웹"으로 샜다(#98·#101).
+# DRF 별표내용은 줄 그림 표(┌│├)다. 칸 단위 격자 복원은 중첩 칸(├가 행 중간에 있는 경우)
+# 때문에 깨지기 쉬워, 테두리만 지우고 칸 구분을 " | "로 남긴 뒤 **최상위 행 경계**(줄 맨 앞
+# ├)에서만 자른다. 칸 안 줄바꿈("종 / 사하는")은 남지만 LLM 판독과 임베딩에는 지장이 없었다.
+# ponytail: 격자 복원 없음 — 표 판독 오류가 실측되면 칸 병합을 붙인다.
+ANNEX_CHUNK_CHARS = 1500
+_BOX = "┌┐└┘├┤┬┴┼─━┏┓┗┛┣┫┳┻╋┠┨┯┷┿╂"
+
+
+def _annex_line(line: str) -> str:
+    cells = [c.strip() for c in re.split(r"[│┃]", line)]
+    cells = [c for c in cells if c and not all(ch in _BOX or ch.isspace() for ch in c)]
+    return " | ".join(cells)
+
+
+def annex_norm(number: str, branch: str = "") -> str:
+    """별표 key — "별표3" / "별표21의2". 청크는 "#k"를 붙인다(article_number_norm 유일성)."""
+    n = str(int(number)) if str(number).isdigit() else str(number)
+    b = str(int(branch)) if str(branch or "").isdigit() and int(branch) else ""
+    return f"별표{n}의{b}" if b else f"별표{n}"
+
+
+def split_annex(text: str, limit: int = ANNEX_CHUNK_CHARS) -> List[str]:
+    """별표 본문 → 청크 목록. 표 머리(첫 최상위 행 경계 전)는 모든 청크 앞에 반복한다."""
+    lines = [l.rstrip() for l in (text or "").split("\n") if l.strip()]
+    blocks, cur = [], []
+    for l in lines:
+        if l.lstrip(" ")[:1] in ("├", "┣", "┠") and l[:1] in ("├", "┣", "┠"):   # 최상위 행 경계
+            blocks.append(cur); cur = []
+            continue
+        conv = _annex_line(l) if any(ch in l for ch in "│┃") else l.strip()
+        if conv and not all(ch in _BOX or ch.isspace() for ch in conv):
+            cur.append(conv)
+    blocks.append(cur)
+    blocks = ["\n".join(b) for b in blocks if b]
+    if not blocks:
+        return []
+    head, body = blocks[0], blocks[1:]
+    if not body:   # 표가 아니거나 행 경계가 없는 별표 — 줄 단위로 자른다
+        body, head = [l for l in head.split("\n")], ""
+    chunks, cur = [], ""
+    for b in body:
+        while len(b) > limit:                     # 한 행이 한도보다 긴 경우(과태료 표 등)
+            cut = b.rfind("\n", 0, limit)
+            cut = cut if cut > 0 else limit
+            if cur:
+                chunks.append(cur); cur = ""
+            chunks.append(b[:cut]); b = b[cut:].lstrip("\n")
+        if cur and len(cur) + len(b) + 1 > limit:
+            chunks.append(cur); cur = ""
+        cur = f"{cur}\n{b}" if cur else b
+    if cur:
+        chunks.append(cur)
+    return [f"{head}\n{c}" if head else c for c in chunks]
+
+
+def _annex_related_article(title: str) -> str:
+    """제목 "(제16조제1항 관련)" → "16". 첫 조문만 쓴다."""
+    m = re.search(r"\(제\s*(\d+)\s*조(?:의\s*(\d+))?", title or "")
+    if not m:
+        return ""
+    return f"{m.group(1)}의{m.group(2)}" if m.group(2) else m.group(1)
+
+
+def extract_annex_payloads(law_name: str, drf_json: dict) -> List[dict]:
+    """DRF JSON → 별표 청크 리스트. 서식(신청서 양식)과 삭제·이동된 별표는 제외."""
+    units = (drf_json.get("법령", {}).get("별표") or {}).get("별표단위") or []
+    if isinstance(units, dict):
+        units = [units]
+    rows = []
+    for u in units:
+        if u.get("별표구분") != "별표":
+            continue
+        title = (u.get("별표제목") or "").strip()
+        if title.startswith("삭제") or "로 이동" in title:
+            continue
+        body = "\n".join(deep_extract_text(u.get("별표내용")))
+        key = annex_norm(u.get("별표번호", ""), u.get("별표가지번호", ""))
+        display = key.replace("별표", "별표 ")
+        related = _annex_related_article(title)
+        parts = split_annex(clean_text(body))
+        for k, part in enumerate(parts, start=1):
+            rows.append({
+                "chunk_id": str(uuid.uuid4()),
+                "law_name": law_name,
+                "law_name_norm": normalize_law_name(law_name),
+                "article_number": display,
+                "article_number_norm": f"{key}#{k}",
+                "text": f"[{law_name} {display}] {title}" + (f" ({k}/{len(parts)})" if len(parts) > 1 else "") + f"\n{part}",
+                "enforcement_date": None,
+                "annex": key,
+                "related_article": related,
+            })
+    return rows
+
+
 # ────────────────────────────────────────────────────────────────
 # 비동기 클라이언트 관리
 # ────────────────────────────────────────────────────────────────
@@ -465,6 +563,9 @@ class AsyncLawUpdater:
                     "text": r["text"],
                     "enforcement_date": r["enforcement_date"],
                 }
+                if r.get("annex"):   # #104 — 별표 청크: 별표 필터 검색·조문 연결용
+                    payload["annex"] = r["annex"]
+                    payload["related_article"] = r.get("related_article", "")
                 points.append(qmodels.PointStruct(id=pid, vector=vec, payload=payload))
 
             # Qdrant 업로드 (동기 함수를 비동기로 실행)
@@ -588,13 +689,15 @@ class AsyncLawUpdater:
 
             # 2. 조문 추출
             rows = extract_article_payloads(law_name, drf_json)
+            annex_rows = extract_annex_payloads(law_name, drf_json)   # #104 — 조문이 0개면 별표만 넣지 않는다
             if not rows:
                 if console:
                     console.print(f"⚠️  [{law_name}] 추출된 조문 없음", style="yellow")
                 return 0
 
             if console:
-                console.print(f"📝 [{law_name}] {len(rows)}개 조문 추출 완료")
+                console.print(f"📝 [{law_name}] {len(rows)}개 조문 + 별표 청크 {len(annex_rows)}개 추출 완료")
+            rows = rows + annex_rows
             pending = pending_articles(rows)
             if pending:
                 dates = sorted({str(d) for _, d in pending})

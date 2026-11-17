@@ -58,6 +58,17 @@ def article_matches(retrieved_articles: List[str], law_name: str, article_number
     return any(normalize(art) == expected for art in retrieved_articles)
 
 
+def _label(law: str, art: str, related: str = "") -> str:
+    """검색 결과 → 채점 라벨. 별표 청크는 별표 제목의 "(제N조 관련)" 조문으로 채점한다 (#104).
+
+    정답 라벨은 조문 단위다. "안전관리자 몇 명"의 정답 시행령 제16조는 "별표 3과 같다"뿐이고
+    숫자는 별표 3에 있으므로, 별표 3이 검색되면 제16조를 찾은 것으로 본다. 관련 조문이 없는 별표는 그대로 둔다(미스).
+    """
+    if art.startswith("별표"):
+        return f"{law} 제{related}조" if related else f"{law} {art}"
+    return f"{law} 제{art}조"
+
+
 async def evaluate_single(question: str, accepted: List[tuple], k: int, pipeline: bool = False) -> Dict:
     """accepted: [(law_name, article_number), ...] — 하나라도 검색되면 정답.
 
@@ -69,7 +80,8 @@ async def evaluate_single(question: str, accepted: List[tuple], k: int, pipeline
         # 운영 경로 그대로(search_law_articles): 법령명 인식·우선 법령·threshold·PG 정확 매칭 포함.
         # 운영이 LLM에 넘기는 조문 목록이 곧 검색 결과다 — 웹 폴백이면 빈 목록(미스).
         found = await search_law_articles(question)
-        retrieved_articles = [f"{a['law_name']} 제{a['article_number']}조" for a in found.articles][:k]
+        retrieved_articles = [_label(a["law_name"], a["article_number"], a.get("related_article", ""))
+                              for a in found.articles][:k]
         scores = [a["score"] for a in found.articles][:k]
         results = []
     else:
@@ -81,7 +93,7 @@ async def evaluate_single(question: str, accepted: List[tuple], k: int, pipeline
         payload = r.get("payload", {})
         r_law   = payload.get("law_name", "")
         r_art   = payload.get("article_number_norm", "")
-        label   = f"{r_law} 제{r_art}조" if r_art else r_law
+        label   = _label(r_law, r_art, payload.get("related_article", "")) if r_art else r_law
         retrieved_articles.append(label)
         scores.append(r.get("score", 0.0))
 

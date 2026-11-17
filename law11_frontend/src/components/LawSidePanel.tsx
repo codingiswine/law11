@@ -1,3 +1,4 @@
+import { articleLabel } from "../utils/article";
 import React, { useEffect, useState } from "react";
 import { getLawContent } from "../services/api";
 import type { LawArticle } from "../types";
@@ -80,7 +81,7 @@ const LawSidePanel: React.FC<LawSidePanelProps> = ({ lawName, articleNumber, onC
               데이터베이스에 등록되지 않은 법령입니다.
             </div>
             <a
-              href={`https://www.law.go.kr/법령/${encodeURIComponent(lawName)}/${articleNumber ? `제${articleNumber}조` : ""}`}
+              href={`https://www.law.go.kr/법령/${encodeURIComponent(lawName)}/${articleNumber && !articleNumber.startsWith("별표") ? articleLabel(articleNumber) : ""}`}
               target="_blank"
               rel="noopener noreferrer"
               style={{
@@ -109,7 +110,7 @@ const LawSidePanel: React.FC<LawSidePanelProps> = ({ lawName, articleNumber, onC
         {!loading && !error && articles.map((article, i) => (
           <div key={i} style={{ marginBottom: "24px" }}>
             <div style={{ fontSize: "0.8rem", fontWeight: 600, color: "#4b5563", marginBottom: "8px" }}>
-              제{article.article_number}조
+              {articleLabel(article.article_number)}
             </div>
             <div style={{ fontSize: "0.875rem", lineHeight: 1.7, color: "#374151", whiteSpace: "pre-wrap" }}>
               {formatArticleText(article.text)}
