@@ -94,17 +94,19 @@ async def evaluate_single(question: str, accepted: List[tuple], k: int) -> Dict:
     }
 
 
-async def run_eval(sample: Optional[int] = None):
-    if not GOLDEN_PATH.exists():
-        print(f"❌ 골든 데이터셋 없음: {GOLDEN_PATH}")
+async def run_eval(sample: Optional[int] = None, dataset_path: Path = GOLDEN_PATH, split: Optional[str] = None):
+    if not dataset_path.exists():
+        print(f"❌ 골든 데이터셋 없음: {dataset_path}")
         return
 
-    with open(GOLDEN_PATH, encoding="utf-8") as f:
+    with open(dataset_path, encoding="utf-8") as f:
         data = json.load(f)
 
     dataset = data["dataset"]
     # article_number 가 있는 케이스만 평가 (정답 레이블이 있어야 함)
     dataset = [d for d in dataset if d.get("article_number")]
+    if split:  # 외부셋(eval/external/moel_testset.json)은 status=ok에만 split이 붙는다
+        dataset = [d for d in dataset if d.get("split") == split]
     if sample:
         dataset = dataset[:sample]
 
@@ -187,7 +189,8 @@ async def run_eval(sample: Optional[int] = None):
         }
     }
 
-    out_path = RESULTS_DIR / "retrieval_eval.json"
+    out_path = RESULTS_DIR / ("retrieval_eval.json" if dataset_path == GOLDEN_PATH
+                              else f"retrieval_eval_{dataset_path.stem}_{split or 'all'}.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
     print(f"  저장 완료 → {out_path}\n")
@@ -196,5 +199,7 @@ async def run_eval(sample: Optional[int] = None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--sample", type=int, default=None)
+    parser.add_argument("--dataset", type=Path, default=GOLDEN_PATH)
+    parser.add_argument("--split", choices=["dev", "test"], default=None)
     args = parser.parse_args()
-    asyncio.run(run_eval(sample=args.sample))
+    asyncio.run(run_eval(sample=args.sample, dataset_path=args.dataset, split=args.split))
