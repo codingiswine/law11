@@ -27,6 +27,8 @@ greenlet>=3.0.0              # SQLAlchemy async 브리지. Linux 컨테이너에
 openai>=1.99.9,<2.0.0
 langchain==0.3.27
 langchain-core>=0.3.75,<1.0.0
+# langchain 전이 의존성. 0.15.0(2026-11-17)이 pydantic 2.8.2에서 import 단계 NameError → pytest 플러그인 로딩 실패(CI exit 3). pydantic 올릴 때 같이 푼다
+langsmith==0.14.17
 langchain-openai==0.3.32
 langgraph==0.2.60
 
