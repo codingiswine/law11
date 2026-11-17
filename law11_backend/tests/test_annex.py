@@ -107,3 +107,15 @@ async def test_attach_annex_referenced_by_found_article():
     assert captured["annex"] == "별표3"
     assert found.articles[-1]["article_number"] == "별표3#1"
     assert found.articles[-1]["attached"] is True
+
+
+def test_embedding_input_is_cut_only_when_over_the_token_limit():
+    """건축법 시행령 제119조(8,435토큰)가 임베딩 한도를 넘어 동기화가 400으로 실패했다 (#106).
+    한도 안의 텍스트는 그대로 둔다 — 기존 조문 벡터가 바뀌지 않아야 한다."""
+    from app.tools.law_updater_async import EMBED_MAX_TOKENS, _fit_embedding_input
+    import tiktoken
+    enc = tiktoken.get_encoding("cl100k_base")
+    short = "제1조(목적) 이 법은 안전을 목적으로 한다."
+    assert _fit_embedding_input(short) == short
+    long = "가나다라 " * 5000
+    assert len(enc.encode(_fit_embedding_input(long))) <= EMBED_MAX_TOKENS

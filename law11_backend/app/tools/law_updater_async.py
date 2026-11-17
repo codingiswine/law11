@@ -85,6 +85,31 @@ LAW_ID_MAP: Dict[str, str] = {
     "중대재해처벌등에관한법률시행령": "014159",
 }
 
+# 주변 법령 (#106) — 핵심 9개(LAW_ID_MAP)는 서울시 자치구 재난안전관리팀이 메인으로 보는 범위다.
+# 실무 질문(수영장·계단 안전성 평가, 소화기 개수, 소방기본법 조문)이 그 밖으로 나가 웹으로 샜고,
+# 근거를 법제처 원문으로 확인한 법령만 넣는다. 판례 수집(case_law_updater_async)은 핵심 9개로 유지한다.
+PERIPHERAL_LAW_ID_MAP: Dict[str, str] = {
+    "체육시설의설치이용에관한법률": "000820",
+    "체육시설의설치이용에관한법률시행령": "005234",
+    "체육시설의설치이용에관한법률시행규칙": "008468",
+    "시설물의안전및유지관리에관한특별법": "000237",
+    "시설물의안전및유지관리에관한특별법시행령": "004083",
+    "시설물의안전및유지관리에관한특별법시행규칙": "007619",
+    "건축물관리법": "013478",
+    "건축물관리법시행령": "013742",
+    "건축물관리법시행규칙": "013747",
+    "건축법": "001823",
+    "건축법시행령": "002118",
+    "건축물의피난방화구조등의기준에관한규칙": "006189",
+    "소방시설설치및관리에관한법률": "009503",
+    "소방시설설치및관리에관한법률시행령": "009694",
+    "소방시설설치및관리에관한법률시행규칙": "009730",
+    "소방기본법": "009505",
+    "소방기본법시행령": "009696",
+    "소방기본법시행규칙": "009693",
+}
+ALL_LAW_ID_MAP: Dict[str, str] = {**LAW_ID_MAP, **PERIPHERAL_LAW_ID_MAP}
+
 # Concurrency settings
 MAX_CONCURRENT_REQUESTS = 3  # 동시 HTTP 요청 수
 MAX_CONCURRENT_EMBEDDINGS = 5  # 동시 임베딩 생성 수
@@ -269,6 +294,20 @@ def extract_article_payloads(law_name: str, drf_json: dict) -> List[dict]:
     return payloads
 
 
+# 임베딩 입력 한도 (#106) — 건축법 시행령 제119조(면적·높이 산정방법)가 8,435토큰이라
+# text-embedding-3-large 한도(8,192)를 넘어 법령 전체 동기화가 400으로 실패했다.
+# 한도를 넘는 텍스트만 앞부분으로 자른다(원문은 PG·payload에 그대로). 기존 조문은 모두
+# 한도 안이라 벡터가 바뀌지 않는다. ponytail: 앞부분만 임베딩 — 긴 조문 뒤쪽 내용 검색이 약해지면 분할로.
+EMBED_MAX_TOKENS = 8000
+
+
+def _fit_embedding_input(text: str) -> str:
+    import tiktoken   # langchain-openai가 함께 설치한다
+    enc = tiktoken.get_encoding("cl100k_base")
+    toks = enc.encode(text)
+    return text if len(toks) <= EMBED_MAX_TOKENS else enc.decode(toks[:EMBED_MAX_TOKENS])
+
+
 # ── 별표 (#104) ────────────────────────────────────────────────
 # 조문 본문은 "별표 3과 같다"로 끝나고 숫자(안전관리자 수·교육시간)는 별표에 있다. 예전엔
 # 조문단위만 수집해 별표가 DB에 없었고, 그런 질문은 "미확인 → 웹"으로 샜다(#98·#101).
@@ -280,8 +319,12 @@ ANNEX_CHUNK_CHARS = 1500
 _BOX = "┌┐└┘├┤┬┴┼─━┏┓┗┛┣┫┳┻╋┠┨┯┷┿╂"
 
 
+_BOX_RUN = re.compile("[" + re.escape("┌┐└┘├┤┬┴┼─━┏┓┗┛┣┫┳┻╋┠┨┯┷┿╂") + "]{2,}")
+
+
 def _annex_line(line: str) -> str:
-    cells = [c.strip() for c in re.split(r"[│┃]", line)]
+    # 중첩 칸의 경계선 조각("한정한     ├────┼──┤")이 칸 텍스트에 붙어 남던 것을 지운다 (#106)
+    cells = [_BOX_RUN.sub(" ", c).strip() for c in re.split(r"[│┃]", line)]
     cells = [c for c in cells if c and not all(ch in _BOX or ch.isspace() for ch in c)]
     return " | ".join(cells)
 
@@ -301,7 +344,7 @@ def split_annex(text: str, limit: int = ANNEX_CHUNK_CHARS) -> List[str]:
         if l.lstrip(" ")[:1] in ("├", "┣", "┠") and l[:1] in ("├", "┣", "┠"):   # 최상위 행 경계
             blocks.append(cur); cur = []
             continue
-        conv = _annex_line(l) if any(ch in l for ch in "│┃") else l.strip()
+        conv = _annex_line(l) if any(ch in l for ch in "│┃") else _BOX_RUN.sub(" ", l).strip()
         if conv and not all(ch in _BOX or ch.isspace() for ch in conv):
             cur.append(conv)
     blocks.append(cur)
@@ -474,7 +517,7 @@ class AsyncLawUpdater:
 
     async def fetch_drf_json_with_retry(self, law_name: str) -> dict:
         """법제처 DRF API 호출 (재시도 로직)"""
-        law_id = LAW_ID_MAP.get(law_name, law_name)
+        law_id = ALL_LAW_ID_MAP.get(law_name, law_name)
         params = {
             "OC": LAW_OC_ID,
             "target": "law",
@@ -530,7 +573,7 @@ class AsyncLawUpdater:
     async def create_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
         """배치 임베딩 생성 (동시성 제어)"""
         # 텍스트 정제 (유니코드 문제 문자 제거)
-        cleaned_texts = [clean_text(text) for text in texts]
+        cleaned_texts = [_fit_embedding_input(clean_text(text)) for text in texts]
         
         async with self.embed_semaphore:
             response = await self.openai_client.embeddings.create(
@@ -743,12 +786,12 @@ class AsyncLawUpdater:
         """모든 법령 업데이트 (동시 처리)"""
         if console:
             console.print("\n🚀 법령 최신화 시작", style="cyan bold")
-            console.print(f"📚 대상: {len(LAW_ID_MAP)}개 법령\n")
+            console.print(f"📚 대상: {len(ALL_LAW_ID_MAP)}개 법령 (핵심 {len(LAW_ID_MAP)} + 주변 {len(PERIPHERAL_LAW_ID_MAP)})\n")
 
         start_time = asyncio.get_event_loop().time()
 
         # 모든 법령을 동시에 처리 (Semaphore로 제어)
-        tasks = [self.update_one_law(law_name) for law_name in LAW_ID_MAP.keys()]
+        tasks = [self.update_one_law(law_name) for law_name in ALL_LAW_ID_MAP.keys()]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # 결과 집계

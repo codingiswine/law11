@@ -113,7 +113,10 @@ def test_priority_law_for_appointment_questions_includes_the_decree():
     """#95: 선임 인원은 시행령(별표 3)에 있는데 우선 법령이 산업안전보건법뿐이라 시행령이 빠졌다."""
     laws = law_rag_tool.get_priority_law("상시근로자 300명이면 안전관리자 몇 명 선임해야 해?")
     assert laws == ["산업안전보건법", "산업안전보건법시행령"]
-    assert law_rag_tool.get_priority_law("계단 안전 기준은?") == ["산업안전보건기준에관한규칙"]
+    # 계단은 사업장 기준(안전보건규칙)이 먼저, 일반 건물 기준(건축법 계열)도 함께 (#106)
+    stairs = law_rag_tool.get_priority_law("계단 안전 기준은?")
+    assert stairs[0] == "산업안전보건기준에관한규칙"
+    assert {"건축법시행령", "건축물의피난방화구조등의기준에관한규칙"} <= set(stairs)
     assert law_rag_tool.get_priority_law("오늘 날씨") is None
 
 

@@ -78,6 +78,11 @@ def test_parse_article_number(q, expected):
     ("중대재해처벌법에서 '중대산업재해'의 정의는?", "중대재해처벌등에관한법률", ""),
     # 다른 법의 조문번호는 인식한 법령에 붙이지 않는다 (#103)
     ("도로법 제110조에 따라 지정된 기관인데 「산업안전보건법」상 도급인인지", "산업안전보건법", ""),
+    # 주변 법령 (#106) — 가운뎃점·약칭·계열 내 긴 이름 우선
+    ("체육시설의 설치·이용에 관한 법률 시행규칙 제8조", "체육시설의설치이용에관한법률시행규칙", "8"),
+    ("소방기본법 1조", "소방기본법", "1"),
+    ("시특법 시행령 제4조", "시설물의안전및유지관리에관한특별법시행령", "4"),
+    ("건축법 시행령 제48조", "건축법시행령", "48"),
 ])
 def test_law_name_and_bound_article(q, law, article):
     found_law = detect_law_name(q)
@@ -195,7 +200,8 @@ async def test_law_name_only_below_stricter_threshold_falls_back_to_web():
 async def test_unknown_law_with_article_number_skips_vector_results():
     """DB에 없는 법 + 조문번호 → threshold를 넘겨도 신뢰하지 않고 웹 폴백 (README #31)."""
     with _patch([[_hit("재난및안전관리기본법", "3", 0.92)]] * 2):
-        found = await search_law_articles("소방기본법 2조 알려줘")
+        # 소방기본법은 #106에서 주변 법령으로 들어왔다 — DB에 없는 법은 근로기준법으로 시험한다
+        found = await search_law_articles("근로기준법 2조 알려줘")
     assert found.source == "web"
 
 

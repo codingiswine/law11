@@ -106,6 +106,7 @@ docs/superpowers/
 
 # 로컬 잔여물
 .venv-old-py3122-backup/
+.venv-eval/
 .venv-eval-backup/
 docs/.DS_Store
 

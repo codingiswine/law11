@@ -1,13 +1,13 @@
 # Law11 — Korean Occupational Safety Law RAG Chatbot
 
-> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (105 documented find-fix cycles, plus 7 fixes that predate the changelog — see [CHANGELOG.md](CHANGELOG.md)).
+> English summary. The [Korean README](README.md) is the primary document, including the full engineering changelog (106 documented find-fix cycles, plus 7 fixes that predate the changelog — see [CHANGELOG.md](CHANGELOG.md)).
 
 [![CI](https://github.com/codingiswine/law11/actions/workflows/ci.yml/badge.svg)](https://github.com/codingiswine/law11/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.12+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
-[![Version](https://img.shields.io/badge/Version-1.20.1-orange.svg)]()
+[![Version](https://img.shields.io/badge/Version-1.21.0-orange.svg)]()
 
-A domain-specialized RAG system over **9 Korean occupational-safety laws (1,641 articles + 93 annex tables)**. Built on a chatbot from a startup internship the year before, then rebuilt as an independent personal project — alongside an IT-academy internship — with a measurement-first engineering process.
+A domain-specialized RAG system over **9 core Korean occupational/disaster-safety laws (1,641 articles + 93 annex tables) plus 18 peripheral facility and fire-safety laws added from practitioners' questions (#106)**. Built on a chatbot from a startup internship the year before, then rebuilt as an independent personal project — alongside an IT-academy internship — with a measurement-first engineering process.
 
 Pipeline: **PostgreSQL exact-match → Qdrant semantic search → GPT-4o-mini**, with SSE streaming, multi-turn sessions, citation tracking, and an experimental LangGraph Self-RAG path (`/api/ask-multi`).
 
@@ -21,19 +21,19 @@ All numbers are reproducible from the eval scripts in this repo (30-case correct
 
 | Metric | Value |
 |---|---|
-| Retrieval Top-3 recall (vector-only) | **93.3%** · Top-1 73.3% · Top-5/10 100% (30-case golden set we wrote ourselves, re-measured 2026-11-17, #105; on externally written questions — Ministry of Employment and Labor interpretation requests — the production path scores **48.5%** Top-3 on a held-out 66-case test split, #102; 96.7% before the resync; multi-accepted-article policy #30, statutory-term query expansion #33). The one new miss (GS-020) is caught by the PostgreSQL exact match in production — 0 new failures on the production path |
+| Retrieval Top-3 recall (vector-only) | **93.3%** · Top-1 73.3% · Top-5/10 100% (30-case golden set we wrote ourselves, re-measured 2026-11-17, #105; on externally written questions — Ministry of Employment and Labor interpretation requests — the production path scores **69.7%** Top-3 on a held-out 66-case test split, #102/#106; 96.7% before the resync; multi-accepted-article policy #30, statutory-term query expansion #33). The one new miss (GS-020) is caught by the PostgreSQL exact match in production — 0 new failures on the production path |
 | RAGAS Faithfulness / Answer Relevancy / Context Precision / Context Recall | **0.740–0.773 / 0.606–0.614 / 0.994–0.996 / 0.935–0.964** (range over 3 runs of the same configuration, 2026-11-17 — #105; judge `gpt-4o-mini`, kept separate from the generator model — #57). Until #57 the harness generated answers with a *different* prompt and temperature than production, so earlier figures did not describe the shipped system. **Measured faithfulness noise is 19.3%** — two to three times the earlier estimate (8.45%), so a single-run comparison says nothing about that metric (#72). See the Korean README footnote 2 |
 | Hallucination (golden set) | **GROUNDED 28/28 after statute cross-check** · **0 HALLUCINATION** (judge's raw verdict 23/28, identical across all 3 runs, 2026-11-17 — #105) | Of the five cases the judge flags every run, four (GS-016, 021, 023, 024) are dismissed because a machine check finds the flagged sentence **verbatim in the provided statute** (#78); the fifth (GS-002) quotes an annex table whose cells wrap across lines, which the machine check cannot match, so it was checked by hand against annex 5 (#105). The dismissal also requires every number in the flagged sentence to appear in the statute and no negation absent from it — so an answer that copies an article but alters a figure, or flips its conclusion, is never dismissed (`tests/test_judge_claim_evidence.py`). Detection power is measured against 4 fabricated answers (`eval/judge_negative_controls.json`): 4/4 HALLUCINATION in all 3 runs. A repeated flag is a signal, not proof — every flag is checked against the statute text (#71's GS-024 was a real defect, fixed in #72). **Judge verdicts do not reproduce across dates**: the 27/28 recorded on 2026-11-04 came back as 25/28 when re-run on 2026-11-10 with the same input and prompt (#78). Citation misses were 0 as of 2026-11-04; the 2026-11-10 run could not verify one citation because PostgreSQL was down (`UNVERIFIED` — not a pass). 28 of the 30 golden cases are grounded in DB articles; the other 2 fall through to web search and are not scored (#61). **Scoped to the 9 laws in the DB** |
 | Router accuracy | **46/46 (100%)** (keyword fast-path + LLM hybrid, incl. 11 case-law routing cases) |
 | Multi-turn regression evals | 13 scenarios, each **mutation-tested** (fix reverted → eval must fail) |
-| Automated tests / CI | 269 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
+| Automated tests / CI | 274 pytest cases + GitHub Actions (backend tests, frontend typecheck/build) |
 | Load test | 20 concurrent users, zero failures (2× the design target) |
 | Fault injection | 5 dependencies (PG, Qdrant, OpenAI, Tavily, Naver) killed individually — 4 defects found and fixed (#31) |
-| Documented find-fix cycles | 105 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
+| Documented find-fix cycles | 106 changelog entries (symptom → root cause → measured verification), plus 7 fixes that predate the changelog |
 
 ## Engineering highlights
 
-The [changelog](CHANGELOG.md) documents 105 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
+The [changelog](CHANGELOG.md) documents 106 find-fix cycles in "symptom → root cause → measured verification" form. Selected findings:
 
 - **The golden dataset was lying.** Retrieval eval showed 46.7% Top-3 recall; cross-checking failures against the DB revealed the *retrieval was right and the answer key was wrong* — 13/30 golden article numbers pointed at unrelated articles (e.g., "electric shock prevention" labeled as Article 132, which is about cranes). Correcting the labels moved Top-3 recall *down* to 40.0% — the fake passes were gone — and only against an honest answer key did the real culprit surface: removing the reranker took Top-3 to 83.3% and RAGAS Faithfulness from 0.44 to 0.74. (#25)
 - **193 articles were silently lost to a normalization collision.** Korean laws have branch articles (제14조**의2**, "Article 14-2"); the ingest pipeline collapsed them into the same key as their base article, and the upsert's `ON CONFLICT DO UPDATE` overwrote whichever came first — entire articles (including the one defining the national disaster response HQ) vanished without any error. On the query side the same normalization turned "제14조의2" into "142", matching Article 142. Fixed the scheme end-to-end and resynced: 1,436 → 1,629 articles, RAGAS Faithfulness 0.74 → 0.86. (#28)
@@ -50,7 +50,7 @@ The [changelog](CHANGELOG.md) documents 105 find-fix cycles in "symptom → root
 
 ## Fixes that predate the changelog
 
-The numbered changelog (#1–#105) starts at `v1.0.1` (2026-07-16), when the
+The numbered changelog (#1–#106) starts at `v1.0.1` (2026-07-16), when the
 "symptom → root cause → measured verification" format was adopted. Earlier bug fixes
 exist only as commits; a later audit (`docs/defect_audit.md`) recovered them. They are
 listed separately so the existing numbering stays stable.

@@ -1,0 +1,26 @@
+{
+  "description": "실무자(서울시 자치구 재난안전관리팀) 질문 중 운영 로그(eval/logs)에 반복 기록된 것 — 중요해서가 아니라 쉬운 질문인데 제대로 답하지 못해 테스트로 다시 물었던 질문들이다. 통계 지표가 아니라 합격 기준(acceptance)으로 쓴다. 정답 조문은 Claude가 법제처 현행 원문으로 확인(2026-11-17), 사람 검수 아님.",
+  "source": "eval/logs/qa_*.jsonl (2026-10-21 적대적 트래픽 제외), 질문 문장은 로그 그대로",
+  "label_rules": "law_name·article_number는 현행 조문. 별표가 답을 정하는 경우 그 별표를 가리키는 조문(별표 제목의 '관련' 조문)을 쓴다 — eval_retrieval은 별표 청크를 그 조문으로 채점한다(#104). 계단처럼 사업장/일반 건물에 따라 적용 법이 갈리는 질문은 양쪽을 인정 조문으로 둔다.",
+  "total": 9,
+  "dataset": [
+    {"id": "PA-01", "question": "수영장 안전성 평가는 어떻게 해?", "law_name": "체육시설의설치이용에관한법률", "article_number": "4의3",
+     "accepted_articles": [{"law": "체육시설의설치이용에관한법률시행령", "article": "2의3"}], "note": "체육시설 안전점검 — 반기마다, 항목·평가기준은 시행령 별표"},
+    {"id": "PA-02", "question": "새로 지은 수영장 안전성 평가는 어떻게 해야돼?", "law_name": "체육시설의설치이용에관한법률", "article_number": "4의3",
+     "accepted_articles": [{"law": "체육시설의설치이용에관한법률시행령", "article": "2의3"}], "note": "PA-01과 같은 근거"},
+    {"id": "PA-03", "question": "수영장으로 인정하려면 최소 크기가 있어?", "law_name": "체육시설의설치이용에관한법률시행규칙", "article_number": "8",
+     "accepted_articles": [], "note": "체육시설업 시설기준 별표 4 — 수영장업은 물 깊이 0.9~2.7m 등을 정하고 최소 면적 규정은 없다"},
+    {"id": "PA-04", "question": "계단 안전성 평가는 어떻게 해?", "law_name": "건축물의피난방화구조등의기준에관한규칙", "article_number": "15",
+     "accepted_articles": [{"law": "건축법시행령", "article": "48"}, {"law": "산업안전보건기준에관한규칙", "article": "26"},
+                           {"law": "산업안전보건기준에관한규칙", "article": "30"}], "note": "일반 건물 계단은 피난·방화구조 규칙 제15조(건축법 시행령 제48조), 사업장 계단은 안전보건규칙 제26~30조"},
+    {"id": "PA-05", "question": "계단 안전성 평가 어떻게 해?", "law_name": "건축물의피난방화구조등의기준에관한규칙", "article_number": "15",
+     "accepted_articles": [{"law": "건축법시행령", "article": "48"}, {"law": "산업안전보건기준에관한규칙", "article": "26"},
+                           {"law": "산업안전보건기준에관한규칙", "article": "30"}], "note": "PA-04와 같은 근거"},
+    {"id": "PA-06", "question": "한 층에 소화기 몇 개 있어야돼?", "law_name": "소방시설설치및관리에관한법률시행령", "article_number": "11",
+     "accepted_articles": [], "note": "설치 대상은 시행령 제11조 → 별표 4(연면적 33㎡ 이상). 개수 산정은 화재안전성능기준(NFPC 101, 고시 — 미수집)"},
+    {"id": "PA-07", "question": "한 층에 소화기 또는 소화전 몇 개 있어야돼? 100평 정도 되는 크기야", "law_name": "소방시설설치및관리에관한법률시행령", "article_number": "11",
+     "accepted_articles": [], "note": "PA-06과 같은 근거"},
+    {"id": "PA-08", "question": "소방기본법 1조", "law_name": "소방기본법", "article_number": "1", "accepted_articles": [], "note": "조문 직접 조회"},
+    {"id": "PA-09", "question": "소방기본법 2조 전문 알려줘", "law_name": "소방기본법", "article_number": "2", "accepted_articles": [], "note": "조문 직접 조회"}
+  ]
+}

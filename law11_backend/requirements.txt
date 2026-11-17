@@ -73,3 +73,6 @@ rich==13.7.0                 # Beautiful terminal output
 #   pip install -r requirements.txt
 #
 # Docker에서 자동 설치됨 (law11_backend/Dockerfile)
+
+# 임베딩 입력 토큰 한도 (#106, law_updater_async._fit_embedding_input) — langchain-openai 전이 의존성이지만 직접 import하므로 고정
+tiktoken==0.14.0
