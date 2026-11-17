@@ -72,7 +72,7 @@ judge: `gpt-4o-mini` · ragas 0.1.21 기준 측정값입니다.
 # 앱 venv가 아닌 전용 venv에 설치합니다. 핀 목록은 law11_backend/requirements-eval.txt 하나입니다 (#69, #90).
 # (예전 eval/ 아래 파일은 ragas 한 줄만 고정해 나머지가 핀 없이 다운그레이드됐고, #69가 그 복구에 시간을 썼습니다 — #90에서 삭제)
 cd law11_backend && python -m venv .venv-eval && source .venv-eval/bin/activate
-pip install -r requirements.txt -r requirements-eval.txt
+pip install -r requirements.txt && pip install -r requirements-eval.txt   # 한 번에 주면 langchain 핀 충돌로 실패
 
 # 전체 평가 (30케이스) + 직전 결과와 자동 비교
 docker compose exec fastapi python -m eval.harness

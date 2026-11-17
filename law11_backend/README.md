@@ -157,7 +157,7 @@ python -m pytest tests/ -v
 
 # 평가 하네스 (실제 API/DB 필요) — ragas는 앱 venv와 충돌하므로 전용 venv에 (#90)
 python -m venv .venv-eval && source .venv-eval/bin/activate
-pip install -r requirements.txt -r requirements-eval.txt
+pip install -r requirements.txt && pip install -r requirements-eval.txt   # 한 번에 주면 langchain 핀 충돌로 실패
 python -m eval.harness              # 베이스라인 + 회귀 + smoke
 python -m eval.eval_router          # 라우터 정확도
 python -m eval.eval_retrieval       # 검색 Top-k recall

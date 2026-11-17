@@ -259,7 +259,7 @@ RAGAS 기반 오프라인 평가 + 라우터·검색·할루시네이션·멀티
 # RAGAS(ragas 0.1.21)는 앱이 고정한 langchain 0.3.x와 충돌하므로 전용 venv에서 돈다 (#69, #90)
 cd law11_backend
 python -m venv .venv-eval && source .venv-eval/bin/activate
-pip install -r requirements.txt -r requirements-eval.txt   # 뒤 파일의 핀이 langchain 계열을 내린다
+pip install -r requirements.txt && pip install -r requirements-eval.txt   # 두 번에 나눠야 뒤 핀이 langchain 계열을 내린다(한 번에 주면 pip가 충돌로 실패)
 python -m eval.harness --compare                           # RAGAS 회귀
 python -m eval.eval_retrieval                              # 검색 (무료, 앱 venv에서도 됨)
 ```
