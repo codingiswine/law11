@@ -14,7 +14,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.tools import law_rag_tool
-from app.tools.law_rag_tool import parse_article_number, search_law_articles
+from app.tools.law_rag_tool import (
+    bound_article_number, detect_law_name, parse_article_number, search_law_articles,
+)
 
 
 def _hit(law, article, score, text="조문 본문"):
@@ -66,6 +68,30 @@ def _patch(qdrant_hits, pg_row=None):
 ])
 def test_parse_article_number(q, expected):
     assert parse_article_number(q) == expected
+
+
+@pytest.mark.parametrize("q,law,article", [
+    # 낫표가 법령명과 "시행규칙"을 갈라놓아 법률로 오인하던 문제 (#103)
+    ("「산업안전보건법」 시행규칙 제73조에 따른 보고 대상", "산업안전보건법시행규칙", "73"),
+    # 약칭 (#103)
+    ("산안법 제36조제2항의 의미", "산업안전보건법", "36"),
+    ("중대재해처벌법에서 '중대산업재해'의 정의는?", "중대재해처벌등에관한법률", ""),
+    # 다른 법의 조문번호는 인식한 법령에 붙이지 않는다 (#103)
+    ("도로법 제110조에 따라 지정된 기관인데 「산업안전보건법」상 도급인인지", "산업안전보건법", ""),
+])
+def test_law_name_and_bound_article(q, law, article):
+    found_law = detect_law_name(q)
+    assert found_law == law
+    assert bound_article_number(q, found_law) == article
+
+
+@pytest.mark.asyncio
+async def test_other_law_article_number_does_not_hijack_pg():
+    """"도로법 제110조 … 산업안전보건법상"이 산업안전보건법 제110조 PG 매칭으로 빠지면 안 된다 (#103)."""
+    with _patch([[_hit("산업안전보건법", "63", 0.6)]], pg_row=("제110조 본문", "2024-01-01")):
+        found = await search_law_articles("도로법 제110조에 따라 지정된 기관인데 「산업안전보건법」상 도급인인지")
+    assert found.source == "qdrant"
+    assert found.articles[0]["article_number"] == "63"
 
 
 # ── 계층 판단 ──────────────────────────────────────────────

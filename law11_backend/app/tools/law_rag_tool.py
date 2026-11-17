@@ -11,7 +11,7 @@ law_rag_tool_async_v6.11_direct_article_linked.py
 ────────────────────────────────────────────
 """
 
-import re, urllib.parse, aiohttp
+import re, unicodedata, urllib.parse, aiohttp
 
 
 def _extract_web_citations(answer: str) -> list:
@@ -222,18 +222,47 @@ def expand_legal_terms(query: str) -> str:
             return f"{query} (관련 법령 용어: {term})"
     return query
 
+_LAWS = [
+    "산업안전보건기준에관한규칙", "산업안전보건법시행규칙", "산업안전보건법시행령", "산업안전보건법",
+    "재난및안전관리기본법시행규칙", "재난및안전관리기본법시행령", "재난및안전관리기본법",
+    "중대재해처벌등에관한법률시행령", "중대재해처벌등에관한법률"
+]
+# 실무 질의는 약칭을 쓴다 — "산안법 제63조"가 인식되지 않아 문장 뒤쪽의 다른 법령명에 조문번호가 붙었다 (#103)
+_LAW_ALIASES = [
+    ("중대재해처벌법", "중대재해처벌등에관한법률"), ("중처법", "중대재해처벌등에관한법률"),
+    ("산안법", "산업안전보건법"), ("안전보건규칙", "산업안전보건기준에관한규칙"),
+    ("재난안전법", "재난및안전관리기본법"),
+]
+
+
+def _compact(query: str) -> str:
+    """법령명 매칭용 — 공백·낫표·따옴표를 지우고 약칭을 정식 명칭으로.
+    낫표를 지우지 않으면 "「산업안전보건법」 시행규칙"이 시행규칙으로 인식되지 않는다 (#103)."""
+    q = re.sub(r"[\s「」『』\"'“”‘’]", "", unicodedata.normalize("NFC", query))
+    for alias, full in _LAW_ALIASES:
+        q = q.replace(alias, full)
+    return q
+
+
 def detect_law_name(query: str) -> Optional[str]:
     """질문 내에서 법령명 자동 감지"""
-    LAWS = [
-        "산업안전보건기준에관한규칙", "산업안전보건법시행규칙", "산업안전보건법시행령", "산업안전보건법",
-        "재난및안전관리기본법시행규칙", "재난및안전관리기본법시행령", "재난및안전관리기본법",
-        "중대재해처벌등에관한법률시행령", "중대재해처벌등에관한법률"
-    ]
-    q = re.sub(r"\s+", "", query)
-    for law in LAWS:
+    q = _compact(query)
+    for law in _LAWS:
         if law in q:
             return normalize_law_name(law)
     return None
+
+
+def bound_article_number(query: str, law_name: str) -> str:
+    """인식한 법령명 **바로 뒤에** 붙은 조문번호만 그 법령의 조문으로 본다.
+
+    문장 어딘가의 숫자+조를 그대로 쓰면 "도로법 제110조 … 「산업안전보건법」상 도급인"이
+    산업안전보건법 제110조 PG 정확 매칭으로 빠진다 (외부 dev 실측, #103).
+    """
+    m = re.search(re.escape(law_name) + r"(?:상의|상|의|에서의|에서)?제?(\d+)조(?:의(\d+))?", _compact(query))
+    if not m:
+        return ""
+    return m.group(1) + (f"의{m.group(2)}" if m.group(2) else "")
 
 
 # ⚠️ 할루시네이션 방지: "OOO법 N조"처럼 구체적 법명+조문을 물었는데 그 법이
@@ -530,7 +559,8 @@ async def search_law_articles(query: str, prior_question: str = "") -> LawSearch
     경로를 새로 붙일 때(MCP 등) 이 함수를 호출할 것 — 네 번째 사본을 만들지 않는다.
     """
     law_name = detect_law_name(query)
-    article_number = parse_article_number(query)
+    # 법령명이 있으면 그 법령에 붙은 조문번호만 쓴다(#103). 없으면 "OOO법 N조" 미지 법령 감지용으로 원래 파싱.
+    article_number = bound_article_number(query, law_name) if law_name else parse_article_number(query)
     embed_text = f"{prior_question} {query}".strip() if prior_question else query   # #96
     found = LawSearch(
         source="web",
